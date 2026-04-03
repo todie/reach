@@ -1,5 +1,6 @@
 use crate::docker::DockerClient;
 use clap::Args;
+use colored::Colorize;
 
 #[derive(Args)]
 pub struct DestroyArgs {
@@ -10,6 +11,10 @@ pub struct DestroyArgs {
 pub async fn run(args: DestroyArgs) -> anyhow::Result<()> {
     let docker = DockerClient::new()?;
     docker.destroy(&args.target).await?;
-    println!("Sandbox \"{}\" destroyed.", args.target);
+    println!(
+        "{} {}",
+        "\u{2717}".red(),
+        format!("Sandbox \"{}\" destroyed.", args.target).dimmed()
+    );
     Ok(())
 }

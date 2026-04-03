@@ -1,5 +1,6 @@
 use crate::docker::DockerClient;
 use clap::Args;
+use colored::Colorize;
 
 #[derive(Args)]
 pub struct VncArgs {
@@ -17,7 +18,7 @@ pub async fn run(args: VncArgs) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("noVNC port not mapped"))?;
 
     let url = format!("http://localhost:{}/vnc.html?autoconnect=true", port);
-    println!("Opening {}", url);
+    println!("{} {}", "Opening...".dimmed(), url.cyan());
     open::that(&url)?;
     Ok(())
 }

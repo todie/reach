@@ -1,6 +1,7 @@
 use crate::config::ReachConfig;
 use crate::docker::{DockerClient, Resolution, SandboxConfig, SandboxPorts};
 use clap::Args;
+use colored::Colorize;
 use std::time::Duration;
 
 #[derive(Args)]
@@ -53,25 +54,58 @@ pub async fn run(args: CreateArgs) -> anyhow::Result<()> {
     let docker = DockerClient::new()?;
     let sandbox = docker.create(config).await?;
 
-    println!("Creating sandbox \"{}\"...", sandbox.name);
-    println!("  Container: {}", &sandbox.container_id[..12]);
-    println!("  Image:     {}", sandbox.image);
+    println!();
+    println!("  {}", "reach create".bold());
+    println!("  {}", "\u{2500}".repeat(28).dimmed());
+    println!(
+        "  {} {}  {}",
+        "\u{2713}".green(),
+        "Container ".dimmed(),
+        &sandbox.container_id[..12]
+    );
+    println!(
+        "  {} {}  {}",
+        "\u{2713}".green(),
+        "Image     ".dimmed(),
+        sandbox.image
+    );
+    println!(
+        "  {} {}  {}",
+        "\u{2713}".green(),
+        "Resolution".dimmed(),
+        args.resolution
+    );
 
     if !args.no_wait {
-        print!("  Waiting for health...");
+        print!("  \u{2819} {}", "Waiting for health...".dimmed());
         docker
             .wait_healthy(&args.name, Duration::from_secs(30))
             .await?;
-        println!(" ready.");
+        print!("\r");
+        println!("  {} {}", "\u{2713}".green(), "Healthy");
     }
 
+    println!();
     if let Some(p) = sandbox.ports.novnc {
-        println!("  VNC:       http://localhost:{}", p);
+        println!(
+            "    {}     {}",
+            "VNC:".bold(),
+            format!("http://localhost:{}", p).cyan()
+        );
     }
     if let Some(p) = sandbox.ports.health {
-        println!("  Health:    http://localhost:{}/health", p);
+        println!(
+            "    {}  {}",
+            "Health:".bold(),
+            format!("http://localhost:{}/health", p).cyan()
+        );
     }
 
-    println!("Sandbox \"{}\" ready.", sandbox.name);
+    println!();
+    println!(
+        "  Sandbox {} ready.",
+        format!("\"{}\"", sandbox.name).green().bold()
+    );
+    println!();
     Ok(())
 }

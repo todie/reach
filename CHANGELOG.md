@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Complete type system: 5 layers, 1197 lines covering sandbox, container, MCP, and CLI types.
+- All 8 CLI commands fully implemented: create, destroy, list, connect, exec, serve, vnc, screenshot.
+- Docker client integration via bollard for container lifecycle management.
+- All 8 MCP tools implemented: screenshot, click, type, key, browse, scrape, playwright_eval, exec.
+- 88 tests passing (52 unit + 36 e2e) covering CLI commands, Docker operations, and MCP tools.
+
+### Fixed
+
+- Scrapling 0.4.3 API compatibility: use Fetcher/StealthyFetcher with `.get()` instead of `.fetch()`.
+- websockify pip install and X11 socket directory creation in Docker image.
+
 ## [0.0.1] - 2026-04-02
 
 ### Added

@@ -10,6 +10,24 @@ reach gives AI agents a full Linux desktop inside Docker -- with a browser, scre
 2. **Rust CLI** (`reach`) -- manages sandbox containers from the host
 3. **MCP server** (`reach serve`) -- exposes sandbox tools to AI agents via SSE
 
+## Status
+
+**Phase 1 -- container desktop: complete.** Entering Phase 2.
+
+| Area | Status |
+|------|--------|
+| Type system | Done -- 5 layers, 1197 lines |
+| CLI commands | All 8 implemented and working |
+| MCP tools | All 8 implemented |
+| Docker image | Builds and runs (e2e tested) |
+| Tests | 88 passing (52 unit + 36 e2e) |
+| Scrapling | Compatible with 0.4.3 API (Fetcher/StealthyFetcher with `.get()`) |
+
+**Coming next (Phase 2):**
+- MCP SSE server integration testing
+- Agent-driven workflow demos
+- Multi-sandbox orchestration
+
 ## Architecture
 
 ```
@@ -41,26 +59,29 @@ reach gives AI agents a full Linux desktop inside Docker -- with a browser, scre
 ## Quickstart
 
 ```bash
+# Build the Docker image
+make image
+
 # Start a sandbox with docker compose
 docker compose up -d
 
-# Or use the CLI
+# Or use the CLI directly
 reach create --name my-sandbox --resolution 1280x720
+reach list
+reach vnc my-sandbox          # open desktop in browser
+reach screenshot my-sandbox -o shot.png
+reach exec my-sandbox -- ls -la
+reach destroy my-sandbox
 
 # Start the MCP server for AI agents
 reach serve --port 4200
 
-# Open the desktop in your browser
-reach vnc my-sandbox
-
-# Capture a screenshot
-reach screenshot my-sandbox -o shot.png
-
-# Run a command inside the sandbox
-reach exec my-sandbox -- ls -la
+# Run tests
+make test                     # 52 unit tests
+cargo test --workspace -- --ignored   # 36 e2e tests (requires Docker)
 ```
 
-## CLI Reference
+## CLI Commands (all 8 implemented)
 
 | Command | Description | Key Flags |
 |---------|-------------|-----------|
@@ -73,7 +94,7 @@ reach exec my-sandbox -- ls -la
 | `reach vnc` | Open noVNC in browser | `<target>` |
 | `reach screenshot` | Capture a screenshot | `<target>`, `-o/--output` |
 
-## MCP Tool Reference
+## MCP Tools (all 8 implemented)
 
 These tools are exposed by `reach serve` to AI agents:
 
@@ -84,7 +105,7 @@ These tools are exposed by `reach serve` to AI agents:
 | `type` | Type text via keyboard | `text` |
 | `key` | Send a key combination | `keys` (e.g. "ctrl+c") |
 | `browse` | Navigate Chrome to a URL | `url` |
-| `scrape` | Extract structured content from a page | `url`, `selector` |
+| `scrape` | Extract structured content from a page (Scrapling Fetcher/StealthyFetcher `.get()`) | `url`, `selector` |
 | `playwright_eval` | Execute Playwright script | `script` |
 | `exec` | Run a shell command in the sandbox | `command` |
 

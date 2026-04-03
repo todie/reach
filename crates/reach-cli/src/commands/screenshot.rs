@@ -1,5 +1,6 @@
 use crate::docker::DockerClient;
 use clap::Args;
+use colored::Colorize;
 use std::io::Write;
 
 #[derive(Args)]
@@ -19,7 +20,12 @@ pub async fn run(args: ScreenshotArgs) -> anyhow::Result<()> {
     match args.output {
         Some(path) => {
             std::fs::write(&path, &png_bytes)?;
-            println!("Screenshot saved to {} ({} bytes)", path, png_bytes.len());
+            println!(
+                "{} Screenshot saved to {} {}",
+                "\u{2713}".green(),
+                path.bold(),
+                format!("({} bytes)", png_bytes.len()).dimmed()
+            );
         }
         None => {
             use base64::Engine;
