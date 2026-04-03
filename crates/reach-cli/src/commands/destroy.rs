@@ -1,3 +1,4 @@
+use crate::docker::DockerClient;
 use clap::Args;
 
 #[derive(Args)]
@@ -6,6 +7,9 @@ pub struct DestroyArgs {
     pub target: String,
 }
 
-pub async fn run(_args: DestroyArgs) -> anyhow::Result<()> {
-    todo!("reach destroy")
+pub async fn run(args: DestroyArgs) -> anyhow::Result<()> {
+    let docker = DockerClient::new()?;
+    docker.destroy(&args.target).await?;
+    println!("Sandbox \"{}\" destroyed.", args.target);
+    Ok(())
 }

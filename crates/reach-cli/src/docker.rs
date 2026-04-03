@@ -1,14 +1,16 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use bollard::container::{
-    Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
-    StopContainerOptions,
+    Config, CreateContainerOptions, ListContainersOptions, LogsOptions,
+    RemoveContainerOptions, StopContainerOptions,
 };
-use bollard::models::HostConfig;
+use bollard::exec::{CreateExecOptions, StartExecResults};
+use bollard::models::{HostConfig, PortBinding};
+use futures::StreamExt;
 use std::collections::HashMap;
 use std::time::Duration;
 
 // ═══════════════════════════════════════════════════════════
-// Sandbox configuration — what the user asks for
+// Sandbox configuration
 // ═══════════════════════════════════════════════════════════
 
 #[derive(Debug, Clone)]
@@ -69,14 +71,14 @@ impl Default for SandboxConfig {
                 width: 1280,
                 height: 720,
             },
-            shm_size: 2 * 1024 * 1024 * 1024, // 2GB
+            shm_size: 2 * 1024 * 1024 * 1024,
             ports: SandboxPorts::default(),
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════
-// Sandbox — runtime representation of a running container
+// Sandbox runtime state
 // ═══════════════════════════════════════════════════════════
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -117,8 +119,15 @@ pub struct SandboxPortMapping {
     pub health: Option<u16>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ExecOutput {
+    pub exit_code: i64,
+    pub stdout: String,
+    pub stderr: String,
+}
+
 // ═══════════════════════════════════════════════════════════
-// Container labels — how we tag and discover reach containers
+// Labels
 // ═══════════════════════════════════════════════════════════
 
 pub struct Labels;
@@ -133,48 +142,20 @@ impl Labels {
         let mut labels = HashMap::new();
         labels.insert(Self::MANAGED.into(), "true".into());
         labels.insert(Self::NAME.into(), config.name.clone());
-        labels.insert(
-            Self::CREATED.into(),
-            chrono::Utc::now().to_rfc3339(),
-        );
+        labels.insert(Self::CREATED.into(), chrono::Utc::now().to_rfc3339());
         labels.insert(Self::RESOLUTION.into(), config.resolution.to_string());
         labels
     }
 
     pub fn filter() -> HashMap<String, Vec<String>> {
         let mut filters = HashMap::new();
-        filters.insert(
-            "label".into(),
-            vec![format!("{}=true", Self::MANAGED)],
-        );
+        filters.insert("label".into(), vec![format!("{}=true", Self::MANAGED)]);
         filters
     }
 }
 
 // ═══════════════════════════════════════════════════════════
-// Docker client — trait for testability, impl for bollard
-// ═══════════════════════════════════════════════════════════
-
-#[async_trait::async_trait]
-pub trait SandboxManager {
-    async fn create(&self, config: SandboxConfig) -> Result<Sandbox>;
-    async fn destroy(&self, target: &str) -> Result<()>;
-    async fn list(&self) -> Result<Vec<Sandbox>>;
-    async fn find(&self, target: &str) -> Result<Sandbox>;
-    async fn exec(&self, target: &str, command: &[String]) -> Result<ExecOutput>;
-    async fn screenshot(&self, target: &str) -> Result<Vec<u8>>;
-    async fn wait_healthy(&self, target: &str, timeout: Duration) -> Result<()>;
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ExecOutput {
-    pub exit_code: i64,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-// ═══════════════════════════════════════════════════════════
-// Bollard implementation
+// Docker client
 // ═══════════════════════════════════════════════════════════
 
 pub struct DockerClient {
@@ -190,4 +171,283 @@ impl DockerClient {
     pub fn inner(&self) -> &bollard::Docker {
         &self.client
     }
+
+    pub async fn create(&self, config: SandboxConfig) -> Result<Sandbox> {
+        let labels = Labels::for_sandbox(&config);
+
+        let port_bindings = {
+            let mut map: HashMap<String, Option<Vec<PortBinding>>> = HashMap::new();
+            map.insert(
+                "5900/tcp".into(),
+                Some(vec![PortBinding {
+                    host_ip: Some("0.0.0.0".into()),
+                    host_port: Some(config.ports.vnc.to_string()),
+                }]),
+            );
+            map.insert(
+                "6080/tcp".into(),
+                Some(vec![PortBinding {
+                    host_ip: Some("0.0.0.0".into()),
+                    host_port: Some(config.ports.novnc.to_string()),
+                }]),
+            );
+            map.insert(
+                "8400/tcp".into(),
+                Some(vec![PortBinding {
+                    host_ip: Some("0.0.0.0".into()),
+                    host_port: Some(config.ports.health.to_string()),
+                }]),
+            );
+            map
+        };
+
+        let host_config = HostConfig {
+            port_bindings: Some(port_bindings),
+            shm_size: Some(config.shm_size as i64),
+            ..Default::default()
+        };
+
+        let container_config = Config {
+            image: Some(config.image.clone()),
+            labels: Some(labels),
+            host_config: Some(host_config),
+            env: Some(vec![
+                format!("WIDTH={}", config.resolution.width),
+                format!("HEIGHT={}", config.resolution.height),
+            ]),
+            exposed_ports: Some({
+                let mut m = HashMap::new();
+                m.insert("5900/tcp".into(), HashMap::new());
+                m.insert("6080/tcp".into(), HashMap::new());
+                m.insert("8400/tcp".into(), HashMap::new());
+                m
+            }),
+            ..Default::default()
+        };
+
+        let opts = CreateContainerOptions {
+            name: &config.name,
+            platform: None,
+        };
+
+        let resp = self
+            .client
+            .create_container(Some(opts), container_config)
+            .await
+            .context("failed to create container")?;
+
+        self.client
+            .start_container::<String>(&resp.id, None)
+            .await
+            .context("failed to start container")?;
+
+        tracing::info!(name = config.name, id = &resp.id[..12], "sandbox created");
+
+        Ok(Sandbox {
+            name: config.name,
+            container_id: resp.id,
+            status: SandboxStatus::Starting,
+            image: config.image,
+            ports: SandboxPortMapping {
+                vnc: Some(config.ports.vnc),
+                novnc: Some(config.ports.novnc),
+                health: Some(config.ports.health),
+            },
+            created_at: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+
+    pub async fn destroy(&self, target: &str) -> Result<()> {
+        let sandbox = self.find(target).await?;
+
+        self.client
+            .stop_container(
+                &sandbox.container_id,
+                Some(StopContainerOptions { t: 10 }),
+            )
+            .await
+            .context("failed to stop container")?;
+
+        self.client
+            .remove_container(
+                &sandbox.container_id,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .context("failed to remove container")?;
+
+        tracing::info!(name = sandbox.name, "sandbox destroyed");
+        Ok(())
+    }
+
+    pub async fn list(&self) -> Result<Vec<Sandbox>> {
+        let opts = ListContainersOptions {
+            all: true,
+            filters: Labels::filter(),
+            ..Default::default()
+        };
+
+        let containers = self.client.list_containers(Some(opts)).await?;
+
+        let sandboxes = containers
+            .into_iter()
+            .map(|c| {
+                let labels = c.labels.unwrap_or_default();
+                let name = labels
+                    .get(Labels::NAME)
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".into());
+                let status = c
+                    .state
+                    .as_deref()
+                    .map(SandboxStatus::from)
+                    .unwrap_or(SandboxStatus::Unknown);
+
+                let ports = extract_ports(&c.ports.unwrap_or_default());
+
+                Sandbox {
+                    name,
+                    container_id: c.id.unwrap_or_default(),
+                    status,
+                    image: c.image.unwrap_or_default(),
+                    ports,
+                    created_at: labels
+                        .get(Labels::CREATED)
+                        .cloned()
+                        .unwrap_or_default(),
+                }
+            })
+            .collect();
+
+        Ok(sandboxes)
+    }
+
+    pub async fn find(&self, target: &str) -> Result<Sandbox> {
+        let sandboxes = self.list().await?;
+        sandboxes
+            .into_iter()
+            .find(|s| s.name == target || s.container_id.starts_with(target))
+            .ok_or_else(|| anyhow::anyhow!("sandbox '{}' not found", target))
+    }
+
+    pub async fn exec(&self, target: &str, command: &[String]) -> Result<ExecOutput> {
+        let sandbox = self.find(target).await?;
+        let cmd: Vec<&str> = command.iter().map(|s| s.as_str()).collect();
+
+        let exec = self
+            .client
+            .create_exec(
+                &sandbox.container_id,
+                CreateExecOptions {
+                    cmd: Some(cmd),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    env: Some(vec!["DISPLAY=:99"]),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+
+        if let StartExecResults::Attached { mut output, .. } =
+            self.client.start_exec(&exec.id, None).await?
+        {
+            while let Some(Ok(msg)) = output.next().await {
+                match msg {
+                    bollard::container::LogOutput::StdOut { message } => {
+                        stdout.push_str(&String::from_utf8_lossy(&message));
+                    }
+                    bollard::container::LogOutput::StdErr { message } => {
+                        stderr.push_str(&String::from_utf8_lossy(&message));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let inspect = self.client.inspect_exec(&exec.id).await?;
+        let exit_code = inspect.exit_code.unwrap_or(-1);
+
+        Ok(ExecOutput {
+            exit_code,
+            stdout,
+            stderr,
+        })
+    }
+
+    pub async fn screenshot(&self, target: &str) -> Result<Vec<u8>> {
+        let out = self
+            .exec(
+                target,
+                &[
+                    "bash".into(),
+                    "-c".into(),
+                    "scrot -z /tmp/_reach_shot.png && base64 /tmp/_reach_shot.png && rm /tmp/_reach_shot.png".into(),
+                ],
+            )
+            .await?;
+
+        if out.exit_code != 0 {
+            bail!("screenshot failed: {}", out.stderr);
+        }
+
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(out.stdout.trim())
+            .context("failed to decode screenshot base64")?;
+
+        Ok(bytes)
+    }
+
+    pub async fn wait_healthy(&self, target: &str, timeout: Duration) -> Result<()> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if tokio::time::Instant::now() > deadline {
+                bail!("timeout waiting for sandbox '{}' to become healthy", target);
+            }
+
+            let out = self
+                .exec(
+                    target,
+                    &[
+                        "curl".into(),
+                        "-sf".into(),
+                        "http://localhost:8400/health".into(),
+                    ],
+                )
+                .await;
+
+            if let Ok(result) = out {
+                if result.exit_code == 0 {
+                    return Ok(());
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+}
+
+fn extract_ports(ports: &[bollard::models::Port]) -> SandboxPortMapping {
+    let mut mapping = SandboxPortMapping {
+        vnc: None,
+        novnc: None,
+        health: None,
+    };
+
+    for p in ports {
+        match p.private_port {
+            5900 => mapping.vnc = p.public_port.map(|p| p as u16),
+            6080 => mapping.novnc = p.public_port.map(|p| p as u16),
+            8400 => mapping.health = p.public_port.map(|p| p as u16),
+            _ => {}
+        }
+    }
+
+    mapping
 }
