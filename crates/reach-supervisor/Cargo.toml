@@ -7,6 +7,10 @@ repository.workspace = true
 authors.workspace = true
 description = "PID 1 process supervisor for reach sandbox containers"
 
+[lib]
+name = "reach_supervisor"
+path = "src/lib.rs"
+
 [[bin]]
 name = "reach-supervisor"
 path = "src/main.rs"

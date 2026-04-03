@@ -7,6 +7,10 @@ repository.workspace = true
 authors.workspace = true
 description = "CLI for managing reach sandbox containers"
 
+[lib]
+name = "reach_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "reach"
 path = "src/main.rs"
