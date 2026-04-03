@@ -1,0 +1,4 @@
+{
+  "crates/reach-cli": "0.0.1",
+  "crates/reach-supervisor": "0.0.1"
+}
