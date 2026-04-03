@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct ReachConfig {
     pub sandbox: SandboxDefaults,
     pub server: ServerConfig,
@@ -41,6 +42,7 @@ pub struct ServerConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct DockerConfig {
     /// Docker socket path (empty = auto-detect)
     pub socket: String,
@@ -50,15 +52,6 @@ pub struct DockerConfig {
 // Defaults
 // ═══════════════════════════════════════════════════════════
 
-impl Default for ReachConfig {
-    fn default() -> Self {
-        Self {
-            sandbox: SandboxDefaults::default(),
-            server: ServerConfig::default(),
-            docker: DockerConfig::default(),
-        }
-    }
-}
 
 impl Default for SandboxDefaults {
     fn default() -> Self {
@@ -82,13 +75,6 @@ impl Default for ServerConfig {
     }
 }
 
-impl Default for DockerConfig {
-    fn default() -> Self {
-        Self {
-            socket: String::new(),
-        }
-    }
-}
 
 // ═══════════════════════════════════════════════════════════
 // Loading

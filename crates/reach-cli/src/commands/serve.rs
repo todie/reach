@@ -1,6 +1,5 @@
-use crate::config::ReachConfig;
-use crate::docker::DockerClient;
-use crate::mcp::{
+use reach_cli::docker::DockerClient;
+use reach_cli::mcp::{
     JsonRpcRequest, JsonRpcResponse, McpInitializeResult, ToolResponse, tool_definitions,
 };
 use axum::extract::State;
@@ -62,7 +61,7 @@ async fn resolve_sandbox(state: &AppState, requested: Option<&str>) -> anyhow::R
     let sandboxes = state.docker.list().await?;
     sandboxes
         .into_iter()
-        .find(|s| matches!(s.status, crate::docker::SandboxStatus::Running))
+        .find(|s| matches!(s.status, reach_cli::docker::SandboxStatus::Running))
         .map(|s| s.name)
         .ok_or_else(|| anyhow::anyhow!("no running sandbox found"))
 }

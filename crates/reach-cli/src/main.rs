@@ -1,7 +1,4 @@
 mod commands;
-mod config;
-mod docker;
-mod mcp;
 
 use clap::Parser;
 

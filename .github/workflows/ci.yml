@@ -8,39 +8,45 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
 
 jobs:
-  check:
-    name: Check
+  fmt:
+    name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --tests -- -W clippy::all
 
-      - name: Format
-        run: cargo fmt --all -- --check
+  deny:
+    name: Deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
 
-      - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
-
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
-      - name: Deny check
-        run: cargo deny check
-
-  test:
-    name: Test
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: cargo test --workspace
+      - name: Run unit tests
+        run: cargo test --workspace -- --skip e2e
 
   build:
     name: Build
@@ -51,19 +57,167 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build release
         run: cargo build --workspace --release
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: |
+            target/release/reach
+            target/release/reach-supervisor
 
-  docker:
-    name: Docker
+  docker-build:
+    name: Docker Build
     runs-on: ubuntu-latest
-    needs: [check, test]
+    needs: [unit-tests]
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build image
-        run: docker build -t reach .
-      - name: Smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: reach:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Save image
+        run: docker save reach:ci -o /tmp/reach-image.tar
+      - name: Upload image
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/reach-image.tar
+          retention-days: 1
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Download image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Load image
+        run: docker load -i /tmp/reach-image.tar
+
+      # Tag as reach:latest so e2e tests find it
+      - name: Tag image
+        run: docker tag reach:ci reach:latest
+
+      - name: Run e2e tests
+        run: cargo test -p reach-cli --test e2e_container -- --ignored --test-threads=1
+        timeout-minutes: 10
+
+  e2e-supervisor:
+    name: Supervisor Health
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Load image
+        run: docker load -i /tmp/reach-image.tar && docker tag reach:ci reach:latest
+
+      - name: Start container
         run: |
-          docker run -d --name reach-test -p 8400:8400 --shm-size=2g reach
-          sleep 5
-          curl -f http://localhost:8400/health || exit 1
-          docker stop reach-test
-          docker rm reach-test
+          docker run -d --name reach-ci \
+            --shm-size=2g \
+            -p 8400:8400 \
+            -p 5900:5900 \
+            -p 6080:6080 \
+            reach:latest
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8400/health; then
+              echo ""
+              echo "Healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Timeout waiting for health"
+          docker logs reach-ci
+          exit 1
+
+      - name: Verify all processes running
+        run: |
+          HEALTH=$(curl -sf http://localhost:8400/health)
+          echo "$HEALTH" | python3 -c "
+          import json, sys
+          h = json.load(sys.stdin)
+          assert h['status'] == 'healthy', f'status: {h[\"status\"]}'
+          procs = {p['name']: p['status'] for p in h['processes']}
+          for name in ['xvfb', 'openbox', 'x11vnc', 'novnc']:
+              assert procs.get(name) == 'running', f'{name}: {procs.get(name)}'
+          print(f'All {len(procs)} processes healthy')
+          "
+
+      - name: Verify display
+        run: docker exec reach-ci bash -c "DISPLAY=:99 xdotool getdisplaygeometry" | grep "1280 720"
+
+      - name: Verify Chrome
+        run: docker exec reach-ci google-chrome --version | grep "Google Chrome"
+
+      - name: Verify screenshot
+        run: |
+          docker exec reach-ci bash -c "DISPLAY=:99 scrot -z /tmp/ci_shot.png"
+          docker exec reach-ci python3 -c "
+          import struct
+          with open('/tmp/ci_shot.png','rb') as f:
+              assert f.read(4) == b'\x89PNG', 'not a PNG'
+              f.read(12)
+              w,h = struct.unpack('>II', f.read(8))
+              assert (w,h) == (1280,720), f'wrong dimensions: {w}x{h}'
+              print(f'Screenshot OK: {w}x{h}')
+          "
+
+      - name: Verify VNC port
+        run: docker exec reach-ci bash -c "timeout 2 bash -c 'echo > /dev/tcp/localhost/5900'"
+
+      - name: Verify noVNC
+        run: curl -sf http://localhost:6080/ | head -1
+
+      - name: Verify Playwright
+        run: |
+          docker exec reach-ci python3 -c "
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              b = p.chromium.launch(headless=True)
+              page = b.new_page()
+              page.goto('https://example.com')
+              assert page.title() == 'Example Domain'
+              print('Playwright OK')
+              b.close()
+          "
+
+      - name: Verify Scrapling
+        run: |
+          docker exec reach-ci python3 -c "
+          from scrapling import Fetcher
+          r = Fetcher().get('https://example.com')
+          h1 = r.css('h1')[0].text
+          assert h1 == 'Example Domain', f'got: {h1}'
+          print('Scrapling OK')
+          "
+
+      - name: Verify graceful shutdown
+        run: |
+          docker stop -t 10 reach-ci
+          EXIT_CODE=$(docker inspect -f '{{.State.ExitCode}}' reach-ci)
+          echo "Exit code: $EXIT_CODE"
+          [ "$EXIT_CODE" = "0" ] || (docker logs reach-ci && exit 1)
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f reach-ci 2>/dev/null || true

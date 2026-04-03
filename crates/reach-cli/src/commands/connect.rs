@@ -1,5 +1,5 @@
-use crate::docker::DockerClient;
-use crate::mcp::{
+use reach_cli::docker::DockerClient;
+use reach_cli::mcp::{
     JsonRpcRequest, JsonRpcResponse, McpInitializeResult, RequestId, ToolResponse,
     tool_definitions,
 };

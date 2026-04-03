@@ -1,5 +1,5 @@
-use crate::config::ReachConfig;
-use crate::docker::{DockerClient, Resolution, SandboxConfig, SandboxPorts};
+use reach_cli::config::ReachConfig;
+use reach_cli::docker::{DockerClient, Resolution, SandboxConfig, SandboxPorts};
 use clap::Args;
 use colored::Colorize;
 use std::time::Duration;
@@ -82,7 +82,7 @@ pub async fn run(args: CreateArgs) -> anyhow::Result<()> {
             .wait_healthy(&args.name, Duration::from_secs(30))
             .await?;
         print!("\r");
-        println!("  {} {}", "\u{2713}".green(), "Healthy");
+        println!("  {} Healthy", "\u{2713}".green());
     }
 
     println!();

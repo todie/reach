@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
-use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 use tokio::process::{Child, Command};
@@ -25,7 +24,6 @@ pub struct ProcessSpec {
 #[derive(Debug, Clone)]
 pub enum RestartPolicy {
     Always { max_restarts: u32, backoff: Duration },
-    Never,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +89,20 @@ impl ProcessState {
             _ => 0,
         }
     }
+
+    pub fn exit_code(&self) -> Option<i32> {
+        match self {
+            ProcessState::Failed { exit_code, .. } => *exit_code,
+            _ => None,
+        }
+    }
+
+    pub fn last_error(&self) -> Option<&str> {
+        match self {
+            ProcessState::Failed { last_error, .. } => Some(last_error),
+            _ => None,
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -104,6 +116,10 @@ pub struct ProcessHealth {
     pub pid: Option<u32>,
     pub uptime_secs: Option<f64>,
     pub restart_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -124,6 +140,12 @@ pub struct Supervisor {
     display: u32,
     width: u32,
     height: u32,
+}
+
+impl Default for Supervisor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Supervisor {
@@ -257,6 +279,13 @@ impl Supervisor {
             cmd.env(k, v);
         }
 
+        // Push as Starting before spawn
+        let idx = self.processes.len();
+        self.processes.push(ManagedProcess {
+            spec: spec.clone(),
+            state: ProcessState::Starting,
+        });
+
         let child = cmd
             .spawn()
             .with_context(|| format!("failed to spawn {}", spec.name))?;
@@ -268,7 +297,8 @@ impl Supervisor {
 
         tracing::info!(name = spec.name, pid, "process ready");
 
-        self.processes.push(ManagedProcess {
+        // Transition to Running
+        self.processes[idx] = ManagedProcess {
             spec,
             state: ProcessState::Running {
                 child,
@@ -276,7 +306,7 @@ impl Supervisor {
                 started_at: std::time::Instant::now(),
                 restart_count: 0,
             },
-        });
+        };
 
         Ok(())
     }
@@ -333,6 +363,130 @@ impl Supervisor {
         Ok(())
     }
 
+    /// Check all processes and restart any that have exited unexpectedly.
+    /// Returns the number of processes restarted.
+    pub async fn check_and_restart(&mut self) -> Result<usize> {
+        let mut restarted = 0;
+
+        // Snapshot which processes are running before mutable iteration
+        let running_names: Vec<&'static str> = self
+            .processes
+            .iter()
+            .filter(|p| p.state.is_running())
+            .map(|p| p.spec.name)
+            .collect();
+
+        for proc in &mut self.processes {
+            if let ProcessState::Running {
+                child,
+                restart_count,
+                ..
+            } = &mut proc.state
+            {
+                // Non-blocking check if process exited
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        let code = status.code();
+                        let count = *restart_count;
+
+                        tracing::warn!(
+                            name = proc.spec.name,
+                            exit_code = ?code,
+                            restart_count = count,
+                            "process exited unexpectedly"
+                        );
+
+                        // Check restart policy
+                        match &proc.spec.restart {
+                            RestartPolicy::Always {
+                                max_restarts,
+                                backoff,
+                            } => {
+                                if count >= *max_restarts {
+                                    tracing::error!(
+                                        name = proc.spec.name,
+                                        "max restarts ({max_restarts}) exceeded"
+                                    );
+                                    proc.state = ProcessState::Failed {
+                                        exit_code: code,
+                                        restart_count: count,
+                                        last_error: format!(
+                                            "max restarts exceeded (exit code: {:?})",
+                                            code
+                                        ),
+                                    };
+                                    continue;
+                                }
+
+                                // Backoff before restart
+                                time::sleep(*backoff).await;
+
+                                // Check dependencies are still running
+                                let deps_ok = proc
+                                    .spec
+                                    .depends_on
+                                    .iter()
+                                    .all(|dep| running_names.contains(dep));
+
+                                if !deps_ok {
+                                    tracing::warn!(
+                                        name = proc.spec.name,
+                                        "dependency not running, marking failed"
+                                    );
+                                    proc.state = ProcessState::Failed {
+                                        exit_code: code,
+                                        restart_count: count,
+                                        last_error: "dependency not running".into(),
+                                    };
+                                    continue;
+                                }
+
+                                // Restart
+                                tracing::info!(
+                                    name = proc.spec.name,
+                                    attempt = count + 1,
+                                    "restarting process"
+                                );
+
+                                let mut cmd = Command::new(proc.spec.command);
+                                cmd.args(&proc.spec.args);
+                                for (k, v) in &proc.spec.env {
+                                    cmd.env(k, v);
+                                }
+
+                                match cmd.spawn() {
+                                    Ok(new_child) => {
+                                        let pid = new_child.id().unwrap_or(0);
+                                        proc.state = ProcessState::Running {
+                                            child: new_child,
+                                            pid,
+                                            started_at: std::time::Instant::now(),
+                                            restart_count: count + 1,
+                                        };
+                                        restarted += 1;
+                                    }
+                                    Err(e) => {
+                                        proc.state = ProcessState::Failed {
+                                            exit_code: code,
+                                            restart_count: count,
+                                            last_error: e.to_string(),
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ok(None) => {} // still running
+                    Err(e) => {
+                        tracing::error!(name = proc.spec.name, error = %e, "failed to check process");
+                    }
+                }
+            }
+        }
+
+        Ok(restarted)
+    }
+
     /// Collect health status for all managed processes.
     pub fn health(&self) -> Vec<ProcessHealth> {
         self.processes
@@ -348,6 +502,8 @@ impl Supervisor {
                 pid: p.state.pid(),
                 uptime_secs: p.state.uptime().map(|d| d.as_secs_f64()),
                 restart_count: p.state.restart_count(),
+                exit_code: p.state.exit_code(),
+                last_error: p.state.last_error().map(String::from),
             })
             .collect()
     }
@@ -360,7 +516,8 @@ impl Supervisor {
 
 /// Remove stale X11 lock files that prevent Xvfb from starting.
 pub fn clean_x11_locks() -> Result<()> {
-    for display in [99] {
+    {
+        let display = 99;
         let lock = format!("/tmp/.X{display}-lock");
         let path = Path::new(&lock);
         if path.exists() {

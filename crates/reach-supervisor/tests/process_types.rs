@@ -40,10 +40,15 @@ fn process_health_serializes_status_lowercase() {
         pid: Some(42),
         uptime_secs: Some(120.5),
         restart_count: 0,
+        exit_code: None,
+        last_error: None,
     };
     let json = serde_json::to_value(&health).unwrap();
     assert_eq!(json["status"], "running");
     assert_eq!(json["pid"], 42);
+    // exit_code and last_error should be absent (skip_serializing_if)
+    assert!(json.get("exit_code").is_none());
+    assert!(json.get("last_error").is_none());
 }
 
 #[test]
@@ -54,11 +59,15 @@ fn process_health_failed_status() {
         pid: None,
         uptime_secs: None,
         restart_count: 5,
+        exit_code: Some(139),
+        last_error: Some("segfault".into()),
     };
     let json = serde_json::to_value(&health).unwrap();
     assert_eq!(json["status"], "failed");
     assert!(json["pid"].is_null());
     assert_eq!(json["restart_count"], 5);
+    assert_eq!(json["exit_code"], 139);
+    assert_eq!(json["last_error"], "segfault");
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -92,16 +101,12 @@ fn restart_policy_always_has_backoff() {
         max_restarts: 5,
         backoff: Duration::from_secs(2),
     };
-    match policy {
-        RestartPolicy::Always {
-            max_restarts,
-            backoff,
-        } => {
-            assert_eq!(max_restarts, 5);
-            assert_eq!(backoff, Duration::from_secs(2));
-        }
-        _ => panic!("expected Always"),
-    }
+    let RestartPolicy::Always {
+        max_restarts,
+        backoff,
+    } = policy;
+    assert_eq!(max_restarts, 5);
+    assert_eq!(backoff, Duration::from_secs(2));
 }
 
 // ═══════════════════════════════════════════════════════════

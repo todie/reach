@@ -79,8 +79,8 @@ fn labels_for_sandbox_includes_all_required_keys() {
 
     assert_eq!(labels.get(Labels::MANAGED), Some(&"true".to_string()));
     assert_eq!(labels.get(Labels::NAME), Some(&config.name));
-    assert!(labels.get(Labels::CREATED).is_some());
-    assert!(labels.get(Labels::RESOLUTION).is_some());
+    assert!(labels.contains_key(Labels::CREATED));
+    assert!(labels.contains_key(Labels::RESOLUTION));
 }
 
 #[test]

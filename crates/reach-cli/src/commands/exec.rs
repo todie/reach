@@ -1,4 +1,4 @@
-use crate::docker::DockerClient;
+use reach_cli::docker::DockerClient;
 use clap::Args;
 
 #[derive(Args)]

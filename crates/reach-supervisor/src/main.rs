@@ -4,6 +4,7 @@ mod signals;
 
 use anyhow::Context;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 
 #[tokio::main]
@@ -33,13 +34,26 @@ async fn main() -> anyhow::Result<()> {
     // Start health + metrics server
     let health_handle = tokio::spawn(health::serve(8400, Arc::clone(&shared)));
 
+    // Supervision loop — check processes every 2s, restart if needed
+    let supervision_shared = Arc::clone(&shared);
+    let supervision_handle = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            let mut sup = supervision_shared.write().await;
+            if let Ok(restarted) = sup.check_and_restart().await && restarted > 0 {
+                tracing::info!(restarted, "restarted crashed processes");
+            }
+        }
+    });
+
     // Wait for shutdown signal
     signals::wait_for_shutdown().await?;
 
     // Graceful shutdown
     tracing::info!("shutting down");
-    shared.write().await.stop_all().await?;
+    supervision_handle.abort();
     health_handle.abort();
+    shared.write().await.stop_all().await?;
 
     Ok(())
 }

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, bail};
 use bollard::container::{
-    Config, CreateContainerOptions, ListContainersOptions, LogsOptions,
+    Config, CreateContainerOptions, ListContainersOptions,
     RemoveContainerOptions, StopContainerOptions,
 };
 use bollard::exec::{CreateExecOptions, StartExecResults};
@@ -422,11 +422,10 @@ impl DockerClient {
                 )
                 .await;
 
-            if let Ok(result) = out {
-                if result.exit_code == 0 {
+            if let Ok(result) = out
+                && result.exit_code == 0 {
                     return Ok(());
                 }
-            }
 
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
@@ -442,9 +441,9 @@ fn extract_ports(ports: &[bollard::models::Port]) -> SandboxPortMapping {
 
     for p in ports {
         match p.private_port {
-            5900 => mapping.vnc = p.public_port.map(|p| p as u16),
-            6080 => mapping.novnc = p.public_port.map(|p| p as u16),
-            8400 => mapping.health = p.public_port.map(|p| p as u16),
+            5900 => mapping.vnc = p.public_port,
+            6080 => mapping.novnc = p.public_port,
+            8400 => mapping.health = p.public_port,
             _ => {}
         }
     }
