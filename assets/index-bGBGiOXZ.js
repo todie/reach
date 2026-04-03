@@ -8,6 +8,7 @@
     </a>
     <div class="nav-links">
       <a href="#features">Features</a>
+      <a href="#inside">What's Inside</a>
       <a href="#architecture">Architecture</a>
       <a href="#quickstart">Quickstart</a>
       <a href="https://github.com/todie/reach" target="_blank" class="nav-github">
@@ -20,14 +21,14 @@
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-badge">Open Source</div>
+  <div class="hero-badge">Open Source -- 88 Tests Passing</div>
   <h1 class="hero-title">
     Give AI agents<br/>
     <span class="gradient-text">a desktop to drive.</span>
   </h1>
   <p class="hero-sub">
     Sandboxed Linux desktop with Chrome, Playwright, and anti-bot scraping.<br/>
-    Disposable. Observable. One command.
+    Boots in 1 second. Disposable. Observable. One command.
   </p>
   <div class="hero-actions">
     <a href="#quickstart" class="btn btn-primary">Get Started</a>
@@ -40,18 +41,22 @@
       <span class="terminal-dot green"></span>
       <span class="terminal-title">terminal</span>
     </div>
-    <pre class="terminal-body"><code><span class="t-prompt">$</span> <span class="t-cmd">reach create</span> --name sandbox
-<span class="t-dim">Creating reach sandbox "sandbox"...</span>
-<span class="t-dim">  Display:    Xvfb :99 (1280x720)</span>
-<span class="t-dim">  Browser:    Chrome 146 + Playwright</span>
-<span class="t-dim">  Scraping:   Scrapling 0.4.3</span>
-<span class="t-dim">  VNC:        http://localhost:6080</span>
-<span class="t-ok">Sandbox "sandbox" ready.</span>
+    <pre class="terminal-body"><code><span class="t-prompt">$</span> <span class="t-cmd">reach create</span> <span class="t-flag">--name</span> sandbox
+<span class="t-cyan">reach</span> <span class="t-dim">|</span> Creating sandbox <span class="t-str">"sandbox"</span>...
+<span class="t-cyan">reach</span> <span class="t-dim">|</span>   Display    Xvfb :99 (1280x720)
+<span class="t-cyan">reach</span> <span class="t-dim">|</span>   Browser    Chrome 136 + Playwright
+<span class="t-cyan">reach</span> <span class="t-dim">|</span>   Scraping   Scrapling (Cloudflare bypass)
+<span class="t-cyan">reach</span> <span class="t-dim">|</span>   VNC        http://localhost:6080
+<span class="t-ok">reach</span> <span class="t-dim">|</span> <span class="t-ok">Sandbox "sandbox" ready in 1.1s.</span>
 
-<span class="t-prompt">$</span> <span class="t-cmd">reach serve</span>
-<span class="t-dim">MCP server listening on :4200</span>
-<span class="t-dim">Tools: screenshot, click, type, browse, scrape, exec</span>
-<span class="t-ok">Claude Code connected.</span></code></pre>
+<span class="t-prompt">$</span> <span class="t-cmd">reach list</span>
+<span class="t-header">NAME       STATUS    VNC              UPTIME</span>
+<span class="t-text">sandbox    running   localhost:6080   12s</span>
+
+<span class="t-prompt">$</span> <span class="t-cmd">reach serve</span> <span class="t-flag">--sandbox</span> sandbox
+<span class="t-cyan">mcp</span>  <span class="t-dim">|</span> MCP server listening on <span class="t-str">:4200</span>
+<span class="t-cyan">mcp</span>  <span class="t-dim">|</span> 8 tools: screenshot, click, type, key, browse, scrape, playwright_eval, exec
+<span class="t-ok">mcp</span>  <span class="t-dim">|</span> <span class="t-ok">Claude Code connected.</span></code></pre>
   </div>
 </section>
 
@@ -87,33 +92,102 @@
     <div class="feature-grid">
       <div class="feature-card highlight">
         <div class="feature-emoji">D</div>
-        <h3>Full Desktop</h3>
-        <p>Ubuntu 24.04 with Xvfb, openbox, and VNC. A real GUI environment your agent can screenshot, click, and type in.</p>
+        <h3>Full Desktop in 1 Second</h3>
+        <p>Xvfb + openbox + x11vnc + noVNC. A real GUI environment your agent can screenshot, click, and type in. Boots in under 2 seconds.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">S</div>
+        <h3>Rust Supervisor (PID 1)</h3>
+        <p>Process management, health API, and Prometheus metrics endpoint. Manages all child processes with proper lifecycle and signal handling.</p>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">C</div>
         <h3>Chrome + Playwright</h3>
-        <p>Headed Chrome on the virtual display, plus headless Playwright Chromium. Headed for anti-bot, headless for speed.</p>
+        <p>Headed Chrome on the virtual display for anti-bot scenarios. Headless Playwright Chromium for fast scripting. Both available simultaneously.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-emoji">S</div>
+        <div class="feature-emoji">A</div>
         <h3>Scrapling</h3>
         <p>Adaptive web scraping with anti-bot bypass. Selectors that survive site redesigns. Cloudflare Turnstile? Handled.</p>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">M</div>
-        <h3>MCP Native</h3>
-        <p>Expose screenshot, click, type, browse, scrape, and exec as MCP tools. Any Claude Code session can connect.</p>
+        <h3>MCP Server (8 Tools)</h3>
+        <p>screenshot, click, type, key, browse, scrape, playwright_eval, exec. Any MCP-compatible client (Claude Code, Claude Desktop) can connect.</p>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">R</div>
-        <h3>Rust CLI</h3>
-        <p>Create, destroy, list, connect, screenshot &mdash; all from the terminal. Fast, typed, no runtime dependencies.</p>
+        <h3>Rust CLI (8 Commands)</h3>
+        <p>create, destroy, list, exec, vnc, screenshot, connect, serve. Fast, typed, no runtime dependencies. Full container lifecycle from the terminal.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">U</div>
+        <h3>computer-use-mcp</h3>
+        <p>Desktop control via Model Context Protocol. Screenshot, click, type, and key actions against the full virtual display.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">T</div>
+        <h3>88 Tests, CI/CD</h3>
+        <p>52 unit tests + 36 end-to-end tests, all passing. 3 GitHub Actions workflows for continuous integration. Confidence on every commit.</p>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">P</div>
         <h3>Observable</h3>
-        <p>Prometheus metrics, health endpoints, optional Grafana dashboards. See what your agent is doing in real time.</p>
+        <p>Prometheus /metrics endpoint, /health API on the supervisor. See what your agent is doing in real time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- What's Inside -->
+<section class="inside" id="inside">
+  <div class="section-inner">
+    <h2 class="section-label">What's Inside</h2>
+    <p class="section-desc">The full container stack, from PID 1 to the browser.</p>
+    <div class="stack-container">
+      <div class="stack-layer stack-supervisor">
+        <div class="stack-label">PID 1</div>
+        <div class="stack-title">reach-supervisor <span class="stack-lang">Rust</span></div>
+        <div class="stack-detail">/health &middot; /metrics &middot; process management</div>
+      </div>
+      <div class="stack-row">
+        <div class="stack-layer stack-display">
+          <div class="stack-label">Display</div>
+          <div class="stack-title">Xvfb :99</div>
+          <div class="stack-detail">1280x720 virtual framebuffer</div>
+        </div>
+        <div class="stack-layer stack-wm">
+          <div class="stack-label">Window Manager</div>
+          <div class="stack-title">openbox</div>
+          <div class="stack-detail">lightweight X11 WM</div>
+        </div>
+        <div class="stack-layer stack-vnc">
+          <div class="stack-label">VNC</div>
+          <div class="stack-title">x11vnc + noVNC</div>
+          <div class="stack-detail">:5900 / :6080 (web)</div>
+        </div>
+      </div>
+      <div class="stack-row">
+        <div class="stack-layer stack-chrome">
+          <div class="stack-label">Browser</div>
+          <div class="stack-title">Chrome 136</div>
+          <div class="stack-detail">headed, on display</div>
+        </div>
+        <div class="stack-layer stack-playwright">
+          <div class="stack-label">Scripting</div>
+          <div class="stack-title">Playwright</div>
+          <div class="stack-detail">headless Chromium</div>
+        </div>
+        <div class="stack-layer stack-scrapling">
+          <div class="stack-label">Scraping</div>
+          <div class="stack-title">Scrapling</div>
+          <div class="stack-detail">anti-bot + CF bypass</div>
+        </div>
+      </div>
+      <div class="stack-layer stack-mcp">
+        <div class="stack-label">Interface</div>
+        <div class="stack-title">computer-use-mcp <span class="stack-lang">Python</span></div>
+        <div class="stack-detail">screenshot &middot; click &middot; type &middot; key</div>
       </div>
     </div>
   </div>
@@ -127,20 +201,20 @@
     <div class="arch-diagram">
       <pre><code><span class="arch-host">HOST</span>
 <span class="arch-box">reach CLI <span class="arch-dim">(Rust)</span>
-  create / destroy / list / connect / serve
-  MCP SSE server on :4200</span>
+  create / destroy / list / exec / vnc / screenshot / connect / serve
+  MCP SSE server on :4200 (8 tools)</span>
        <span class="arch-arrow">|  Docker API (bollard)</span>
        <span class="arch-arrow">v</span>
 <span class="arch-container">CONTAINER</span>
 <span class="arch-box">reach-supervisor <span class="arch-dim">(Rust, PID 1)</span>
-  /health  /metrics
+  /health  /metrics (Prometheus)
 
   Xvfb :99 <span class="arch-arrow">-></span> openbox <span class="arch-arrow">-></span> x11vnc :5900 <span class="arch-arrow">-></span> noVNC :6080
 
   Chrome          <span class="arch-dim">headed, on display</span>
-  Playwright      <span class="arch-dim">headless Chromium</span>
-  Scrapling       <span class="arch-dim">adaptive anti-bot scraping</span>
-  computer-use    <span class="arch-dim">screenshot / click / type</span></span></code></pre>
+  Playwright      <span class="arch-dim">headless Chromium scripting</span>
+  Scrapling       <span class="arch-dim">adaptive anti-bot + Cloudflare bypass</span>
+  computer-use    <span class="arch-dim">screenshot / click / type / key</span></span></code></pre>
     </div>
   </div>
 </section>
@@ -153,28 +227,38 @@
       <div class="step">
         <div class="step-num">1</div>
         <div class="step-content">
-          <h3>Start a sandbox</h3>
-          <pre><code><span class="t-prompt">$</span> reach create --name dev</code></pre>
+          <h3>Install reach</h3>
+          <pre><code><span class="t-prompt">$</span> cargo install reach</code></pre>
         </div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
         <div class="step-content">
-          <h3>Connect Claude Code</h3>
-          <pre><code><span class="t-prompt">$</span> reach serve --port 4200
-<span class="t-prompt">$</span> claude mcp add reach --url http://localhost:4200/mcp</code></pre>
+          <h3>Create a sandbox</h3>
+          <pre><code><span class="t-prompt">$</span> reach create <span class="t-flag">--name</span> dev
+<span class="t-ok">Sandbox "dev" ready in 1.1s.</span></code></pre>
         </div>
       </div>
       <div class="step">
         <div class="step-num">3</div>
         <div class="step-content">
-          <h3>Let the agent work</h3>
-          <pre><code><span class="t-dim"># Claude can now screenshot, click, type, browse, and scrape</span>
-<span class="t-dim"># Watch live via VNC at http://localhost:6080</span></code></pre>
+          <h3>Connect Claude Code via MCP</h3>
+          <pre><code><span class="t-prompt">$</span> reach serve <span class="t-flag">--sandbox</span> dev <span class="t-flag">--port</span> 4200
+<span class="t-prompt">$</span> claude mcp add reach <span class="t-flag">--url</span> http://localhost:4200/mcp</code></pre>
         </div>
       </div>
       <div class="step">
         <div class="step-num">4</div>
+        <div class="step-content">
+          <h3>Watch the agent work</h3>
+          <pre><code><span class="t-prompt">$</span> reach vnc dev
+<span class="t-dim"># Opens VNC in your browser at localhost:6080</span>
+<span class="t-dim"># Or take a quick look:</span>
+<span class="t-prompt">$</span> reach screenshot dev <span class="t-flag">--out</span> snap.png</code></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
         <div class="step-content">
           <h3>Tear it down</h3>
           <pre><code><span class="t-prompt">$</span> reach destroy dev
@@ -207,4 +291,4 @@
     <p class="footer-dim">todie/reach</p>
   </div>
 </footer>
-`,document.querySelectorAll(`a[href^="#"]`).forEach(e=>{e.addEventListener(`click`,t=>{t.preventDefault(),document.querySelector(e.getAttribute(`href`))?.scrollIntoView({behavior:`smooth`})})});var t=new IntersectionObserver(e=>{e.forEach(e=>{e.isIntersecting&&e.target.classList.add(`visible`)})},{threshold:.1});document.querySelectorAll(`.feature-card, .problem-card, .step, .arch-diagram`).forEach(e=>{t.observe(e)});
+`,document.querySelectorAll(`a[href^="#"]`).forEach(e=>{e.addEventListener(`click`,t=>{t.preventDefault(),document.querySelector(e.getAttribute(`href`))?.scrollIntoView({behavior:`smooth`})})});var t=new IntersectionObserver(e=>{e.forEach(e=>{e.isIntersecting&&e.target.classList.add(`visible`)})},{threshold:.1});document.querySelectorAll(`.feature-card, .problem-card, .step, .arch-diagram, .stack-layer, .stack-row`).forEach(e=>{t.observe(e)});
