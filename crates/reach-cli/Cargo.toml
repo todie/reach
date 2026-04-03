@@ -26,3 +26,6 @@ tower = "0.5"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
 open = "5"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+toml = "0.8"
