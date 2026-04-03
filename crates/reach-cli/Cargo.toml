@@ -1,0 +1,28 @@
+[package]
+name = "reach-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "CLI for managing reach sandbox containers"
+
+[[bin]]
+name = "reach"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+axum.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+
+clap = { version = "4", features = ["derive"] }
+bollard = "0.18"
+tower = "0.5"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+open = "5"

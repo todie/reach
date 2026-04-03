@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Deny check
+        run: cargo deny check
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --workspace
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
+        run: cargo build --workspace --release
+
+  docker:
+    name: Docker
+    runs-on: ubuntu-latest
+    needs: [check, test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t reach .
+      - name: Smoke test
+        run: |
+          docker run -d --name reach-test -p 8400:8400 --shm-size=2g reach
+          sleep 5
+          curl -f http://localhost:8400/health || exit 1
+          docker stop reach-test
+          docker rm reach-test

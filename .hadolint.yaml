@@ -1,0 +1,3 @@
+ignored:
+  - DL3008  # pin versions in apt-get — we use latest for system packages
+  - DL3013  # pin versions in pip — managed by requirements

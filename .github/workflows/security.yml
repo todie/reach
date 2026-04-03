@@ -1,0 +1,44 @@
+name: Security
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Weekly Monday 6am UTC
+  pull_request:
+    branches: [main]
+
+jobs:
+  audit:
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Audit
+        run: cargo audit
+
+  deny:
+    name: Cargo Deny Advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Check advisories
+        run: cargo deny check advisories
+
+  trivy:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t reach:scan .
+      - uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: reach:scan
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
