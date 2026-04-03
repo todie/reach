@@ -133,11 +133,11 @@ async fn dispatch_tool(
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
             let selector = args.get("selector").and_then(|v| v.as_str()).unwrap_or("body");
             let stealth = args.get("stealth").and_then(|v| v.as_bool()).unwrap_or(true);
-            let fetcher = if stealth { "StealthFetcher" } else { "Scraper" };
+            let fetcher = if stealth { "StealthyFetcher" } else { "Fetcher" };
             let script = format!(
-                "from scrapling import {fetcher}; r = {fetcher}().fetch('{url}'); \
+                "from scrapling import {fetcher}; r = {fetcher}().get('{url}'); \
                  elems = r.css('{selector}'); \
-                 import json; print(json.dumps([{{'content': e.text(), 'tag': e.tag}} for e in elems]))"
+                 import json; print(json.dumps([{{'content': e.text, 'tag': e.tag}} for e in elems]))"
             );
             exec_python(docker, target, &script).await
         }

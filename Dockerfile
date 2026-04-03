@@ -47,10 +47,11 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && npm install -g computer-use-mcp \
     && rm -rf /var/lib/apt/lists/*
 
-# Layer 4: Playwright + Scrapling
+# Layer 4: Playwright + Scrapling + websockify
 RUN pip install --break-system-packages \
     playwright \
     "scrapling[fetchers]" \
+    websockify \
     && playwright install chromium \
     && scrapling install \
     || true
@@ -65,9 +66,11 @@ RUN git_url="https://github.com/novnc/noVNC.git" && \
 # Layer 6: reach-supervisor binary
 COPY --from=builder /build/target/release/reach-supervisor /usr/local/bin/reach-supervisor
 
-# Layer 7: User + permissions
+# Layer 7: User + permissions + X11 socket dir
 RUN useradd -m -s /bin/bash sandbox \
-    && echo "sandbox ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+    && echo "sandbox ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers \
+    && mkdir -p /tmp/.X11-unix \
+    && chmod 1777 /tmp/.X11-unix
 
 # Chrome policies — disable auto-updates, first-run
 COPY config/chrome-policies.json /etc/opt/chrome/policies/managed/reach.json

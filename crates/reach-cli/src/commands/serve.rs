@@ -172,14 +172,14 @@ async fn dispatch(
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
             let sel = args.get("selector").and_then(|v| v.as_str()).unwrap_or("body");
             let stealth = args.get("stealth").and_then(|v| v.as_bool()).unwrap_or(true);
-            let f = if stealth { "StealthFetcher" } else { "Scraper" };
+            let f = if stealth { "StealthyFetcher" } else { "Fetcher" };
             py(
                 state,
                 target,
                 &format!(
-                    "from scrapling import {f}; r = {f}().fetch('{url}'); \
+                    "from scrapling import {f}; r = {f}().get('{url}'); \
                      elems = r.css('{sel}'); \
-                     import json; print(json.dumps([{{'content': e.text(), 'tag': e.tag}} for e in elems]))"
+                     import json; print(json.dumps([{{'content': e.text, 'tag': e.tag}} for e in elems]))"
                 ),
             )
             .await

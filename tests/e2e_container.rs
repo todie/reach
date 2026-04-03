@@ -393,7 +393,7 @@ fn scrapling_can_scrape_page() {
     assert!(wait_for_health(30));
 
     let out = exec_in_container(
-        "python3 -c \"from scrapling import Scraper; r = Scraper().fetch('https://example.com'); print(r.css('h1').text())\""
+        "python3 -c \"from scrapling import Fetcher; r = Fetcher().get('https://example.com'); print(r.css('h1')[0].text)\""
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
