@@ -61,9 +61,9 @@ fn mcp_initialize_default_has_correct_protocol_version() {
 // ═══════════════════════════════════════════════════════════
 
 #[test]
-fn all_eight_tools_are_registered() {
+fn all_tools_are_registered() {
     let tools = tool_definitions();
-    assert_eq!(tools.len(), 8);
+    assert_eq!(tools.len(), 10);
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"screenshot"));
@@ -74,6 +74,39 @@ fn all_eight_tools_are_registered() {
     assert!(names.contains(&"scrape"));
     assert!(names.contains(&"playwright_eval"));
     assert!(names.contains(&"exec"));
+    assert!(names.contains(&"page_text"));
+    assert!(names.contains(&"auth_handoff"));
+}
+
+#[test]
+fn page_text_tool_requires_url() {
+    let tools = tool_definitions();
+    let pt = tools.iter().find(|t| t.name == "page_text").unwrap();
+    let required = pt.input_schema.get("required").unwrap();
+    let required: Vec<String> = serde_json::from_value(required.clone()).unwrap();
+    assert!(required.contains(&"url".into()));
+}
+
+#[test]
+fn auth_handoff_tool_requires_url() {
+    let tools = tool_definitions();
+    let ah = tools.iter().find(|t| t.name == "auth_handoff").unwrap();
+    let required = ah.input_schema.get("required").unwrap();
+    let required: Vec<String> = serde_json::from_value(required.clone()).unwrap();
+    assert!(required.contains(&"url".into()));
+}
+
+#[test]
+fn page_text_params_default_timeout_is_30s() {
+    let params: PageTextParams = serde_json::from_str(r#"{"url": "https://example.com"}"#).unwrap();
+    assert_eq!(params.timeout_ms, 30_000);
+}
+
+#[test]
+fn auth_handoff_params_default_timeout_is_300s() {
+    let params: AuthHandoffParams =
+        serde_json::from_str(r#"{"url": "https://example.com"}"#).unwrap();
+    assert_eq!(params.timeout_seconds, 300);
 }
 
 #[test]

@@ -183,13 +183,96 @@ Chrome renders on Xvfb `:99`. You can:
 2. Capture it with `reach screenshot`
 3. Interact with it using `click`, `type`, and `key` MCP tools
 
+## Auth Handoff for Login-Walled Sites
+
+Some sites — Threads, Instagram, LinkedIn, paywalled news, internal tools — gate their content behind a login wall. Reach exposes two MCP tools that turn this into a clean human-in-the-loop flow:
+
+- `auth_handoff` — opens the URL in Chrome on Xvfb, returns the noVNC URL for the human, and (optionally) polls for an auth-complete signal.
+- `page_text` — Playwright-driven "navigate and extract rendered text". Reuses the same persistent profile so the cookies set during `auth_handoff` carry over.
+
+Combine both with `reach create --persist-profile <name>` so the session survives sandbox destroys.
+
+### Threads-style example
+
+1. **Create a sandbox with a persistent profile:**
+
+   ```bash
+   reach create --name threads --persist-profile threads
+   ```
+
+   This bind-mounts `~/.local/share/reach/profiles/threads` into the container as the Chrome user data dir.
+
+2. **Hand off to a human for login:**
+
+   ```json
+   {
+     "name": "auth_handoff",
+     "arguments": {
+       "url": "https://www.threads.com/login",
+       "use_profile": "threads",
+       "wait_for_url_contains": "/home",
+       "timeout_seconds": 600
+     }
+   }
+   ```
+
+   The agent gets back:
+
+   ```json
+   {
+     "status": "auth_required",
+     "vnc_url": "http://localhost:6080/vnc.html?autoconnect=1&resize=remote",
+     "instructions": "Open the vnc_url in your browser to log in..."
+   }
+   ```
+
+   The human opens that URL, logs into Threads, and the polling helper notices the redirect to `/home` and returns `status: "authenticated"`.
+
+3. **Scrape gated content with the now-authenticated profile:**
+
+   ```json
+   {
+     "name": "page_text",
+     "arguments": {
+       "url": "https://www.threads.com/@todie.ai/post/DWzHGm0FRJw",
+       "use_profile": "threads",
+       "wait_for": "article",
+       "timeout_ms": 30000
+     }
+   }
+   ```
+
+   The Playwright helper launches a `launch_persistent_context` against the same profile, navigates, waits for the `article` element, and returns:
+
+   ```json
+   {
+     "status": "ok",
+     "url": "https://www.threads.com/@todie.ai/post/DWzHGm0FRJw",
+     "title": "...",
+     "text": "..."
+   }
+   ```
+
+4. **Subsequent runs skip the handoff.** As long as the cookies in `~/.local/share/reach/profiles/threads` are still valid, you can `reach destroy threads && reach create --name threads --persist-profile threads` and call `page_text` directly.
+
+### When polling, when not
+
+| Situation | wait_for_* | Pattern |
+|-----------|-----------|---------|
+| Quick interactive login (oauth, password) | `wait_for_url_contains` | One round trip |
+| 2FA / SMS / Captcha | `wait_for_selector` on the post-auth element | Set `timeout_seconds` generously |
+| Already authenticated (warm profile) | omit | Returns `auth_required` immediately, agent calls `page_text` next |
+
+`auth_handoff` always launches Chrome via `launch_persistent_context`, so even the "no wait" path leaves a usable session in the profile dir.
+
 ## Choosing a Scraping Strategy
 
 | Scenario | Tool | Why |
 |----------|------|-----|
 | Static HTML, simple extraction | Scrapling | Fast, no browser overhead |
 | Bot-protected sites | Scrapling (StealthyFetcher) | Built-in anti-bot bypass |
-| JavaScript-rendered content | Playwright | Full browser execution |
+| JavaScript-rendered content (no auth) | `page_text` | Playwright with sane defaults |
+| JavaScript-rendered content (login wall) | `auth_handoff` + `page_text` + `--persist-profile` | Human logs in once, agent scrapes after |
 | Visual interaction needed | Headed Chrome + screenshot | See what the agent sees |
 | Complex multi-step automation | Playwright script | Full browser API |
 | Adaptive selectors (resilient to changes) | Scrapling | Auto-match survives layout changes |

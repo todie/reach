@@ -525,6 +525,153 @@ fn t35_workflow_headed_and_headless_coexist() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// 12. PAGE_TEXT + AUTH_HANDOFF (Playwright SPA tooling)
+// ═══════════════════════════════════════════════════════════
+
+/// Run an embedded Python helper from `reach_cli::docker` inside the
+/// container, passing its JSON payload via the named env var.
+fn run_embedded_python(env_var: &str, payload: &serde_json::Value, script: &str) -> String {
+    use std::io::Write;
+    let payload_str = serde_json::to_string(payload).unwrap();
+
+    // Stage the script as a temp file inside the container so we don't
+    // have to escape multi-line Python on the command line.
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("reach_e2e_{env_var}.py"));
+    {
+        let mut f = std::fs::File::create(&tmp).unwrap();
+        f.write_all(script.as_bytes()).unwrap();
+    }
+    let host_path = tmp.to_string_lossy().to_string();
+    let container_path = format!("/tmp/{}", tmp.file_name().unwrap().to_string_lossy());
+
+    let cp = docker(&["cp", &host_path, &format!("{CONTAINER}:{container_path}")]);
+    assert!(cp.status.success(), "docker cp failed: {}", stderr(&cp));
+
+    let cmd = format!(
+        "{env_var}={} python3 {container_path}",
+        shell_quote(&payload_str)
+    );
+    let out = sh(&cmd);
+    let _ = std::fs::remove_file(&tmp);
+    if !out.status.success() {
+        panic!(
+            "embedded python failed (exit {}): {}\nstdout: {}",
+            out.status.code().unwrap_or(-1),
+            stderr(&out),
+            String::from_utf8_lossy(&out.stdout)
+        );
+    }
+    String::from_utf8_lossy(&out.stdout).to_string()
+}
+
+fn shell_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+fn last_json(stdout: &str) -> serde_json::Value {
+    let line = stdout
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|l| l.starts_with('{') && l.ends_with('}'))
+        .unwrap_or_else(|| panic!("no JSON object in stdout: {stdout}"));
+    serde_json::from_str(line).unwrap_or_else(|e| panic!("bad json {line}: {e}"))
+}
+
+#[test]
+#[ignore]
+fn t37_page_text_basic() {
+    ensure_container();
+    let _ = sh("pkill -f chrome");
+    sleep_ms(500);
+    let payload = serde_json::json!({
+        "url": "https://example.com",
+        "timeout_ms": 30000,
+    });
+    let stdout = run_embedded_python(
+        "REACH_PAGE_TEXT_PAYLOAD",
+        &payload,
+        reach_cli::docker::PAGE_TEXT_SCRIPT,
+    );
+    let parsed = last_json(&stdout);
+    assert_eq!(parsed["status"], "ok", "page_text not ok: {stdout}");
+    let text = parsed["text"].as_str().unwrap_or_default();
+    assert!(
+        text.contains("Example Domain"),
+        "expected text to contain 'Example Domain', got: {text}"
+    );
+}
+
+#[test]
+#[ignore]
+fn t38_page_text_selector() {
+    ensure_container();
+    let _ = sh("pkill -f chrome");
+    sleep_ms(500);
+    let payload = serde_json::json!({
+        "url": "https://example.com",
+        "selector": "h1",
+        "timeout_ms": 30000,
+    });
+    let stdout = run_embedded_python(
+        "REACH_PAGE_TEXT_PAYLOAD",
+        &payload,
+        reach_cli::docker::PAGE_TEXT_SCRIPT,
+    );
+    let parsed = last_json(&stdout);
+    assert_eq!(
+        parsed["status"], "ok",
+        "page_text selector not ok: {stdout}"
+    );
+    let text = parsed["text"].as_str().unwrap_or_default();
+    assert_eq!(text.trim(), "Example Domain");
+}
+
+#[test]
+#[ignore]
+fn t39_auth_handoff_returns_vnc_url() {
+    ensure_container();
+    let _ = sh("pkill -f chrome");
+    sleep_ms(500);
+
+    // Build the noVNC URL the way `reach serve` does so we can assert on it.
+    let vnc = reach_cli::docker::novnc_url("localhost", 16080);
+    assert!(vnc.contains("vnc.html"));
+    assert!(vnc.contains("autoconnect=1"));
+
+    // Drive the auth_handoff Python helper directly: no wait conditions →
+    // it should return status=auth_required immediately and leave Chrome
+    // running on the Xvfb display.
+    let payload = serde_json::json!({
+        "url": "https://example.com",
+        "user_data_dir": "/home/sandbox/.config/google-chrome-profiles/_e2e",
+    });
+    let stdout = run_embedded_python(
+        "REACH_AUTH_HANDOFF_PAYLOAD",
+        &payload,
+        reach_cli::docker::AUTH_HANDOFF_SCRIPT,
+    );
+    let parsed = last_json(&stdout);
+    assert_eq!(
+        parsed["status"], "auth_required",
+        "auth_handoff did not return auth_required: {stdout}"
+    );
+    let url = parsed["url"].as_str().unwrap_or_default();
+    assert!(url.contains("example.com"), "unexpected url: {url}");
+}
+
+// ═══════════════════════════════════════════════════════════
 // 99. SHUTDOWN (must run last)
 // ═══════════════════════════════════════════════════════════
 

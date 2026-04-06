@@ -29,6 +29,34 @@ pub struct SandboxDefaults {
     pub novnc_port: u16,
     /// Default health API port
     pub health_port: u16,
+    /// Root directory for persistent Chrome profiles on the host.
+    ///
+    /// Each `--persist-profile <name>` is materialised as a subdirectory
+    /// under this path. `None` means use the platform default
+    /// (`~/.local/share/reach/profiles`).
+    #[serde(default)]
+    pub profile_dir: Option<PathBuf>,
+}
+
+impl SandboxDefaults {
+    /// Resolve the directory used to store persistent Chrome profiles.
+    ///
+    /// Falls back to `$XDG_DATA_HOME/reach/profiles` (or
+    /// `~/.local/share/reach/profiles`) when `profile_dir` is unset.
+    pub fn resolved_profile_dir(&self) -> PathBuf {
+        self.profile_dir.clone().unwrap_or_else(default_profile_dir)
+    }
+}
+
+/// Platform default for the persistent Chrome profile root.
+pub fn default_profile_dir() -> PathBuf {
+    let base = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            PathBuf::from(home).join(".local").join("share")
+        });
+    base.join("reach").join("profiles")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +89,7 @@ impl Default for SandboxDefaults {
             vnc_port: 5900,
             novnc_port: 6080,
             health_port: 8400,
+            profile_dir: None,
         }
     }
 }
@@ -102,4 +131,34 @@ fn dirs() -> PathBuf {
             PathBuf::from(home).join(".config")
         });
     base.join("reach")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolved_profile_dir_uses_explicit_override() {
+        let defaults = SandboxDefaults {
+            profile_dir: Some(PathBuf::from("/tmp/custom/profiles")),
+            ..SandboxDefaults::default()
+        };
+        assert_eq!(
+            defaults.resolved_profile_dir(),
+            PathBuf::from("/tmp/custom/profiles")
+        );
+    }
+
+    #[test]
+    fn resolved_profile_dir_falls_back_to_default() {
+        let defaults = SandboxDefaults::default();
+        let resolved = defaults.resolved_profile_dir();
+        assert!(resolved.ends_with("reach/profiles"));
+    }
+
+    #[test]
+    fn default_profile_dir_contains_reach_segment() {
+        let dir = default_profile_dir();
+        assert!(dir.to_string_lossy().contains("reach"));
+    }
 }
