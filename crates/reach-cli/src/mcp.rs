@@ -139,6 +139,10 @@ pub enum ToolCall {
     PlaywrightEval(PlaywrightEvalParams),
     #[serde(rename = "exec")]
     Exec(ExecParams),
+    #[serde(rename = "page_text")]
+    PageText(PageTextParams),
+    #[serde(rename = "auth_handoff")]
+    AuthHandoff(AuthHandoffParams),
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -250,12 +254,50 @@ pub struct ExecParams {
     pub sandbox: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageTextParams {
+    pub url: String,
+    #[serde(default)]
+    pub wait_for: Option<String>,
+    #[serde(default)]
+    pub selector: Option<String>,
+    #[serde(default = "default_page_text_timeout")]
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub use_profile: Option<String>,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthHandoffParams {
+    pub url: String,
+    #[serde(default)]
+    pub wait_for_selector: Option<String>,
+    #[serde(default)]
+    pub wait_for_url_contains: Option<String>,
+    #[serde(default = "default_auth_timeout_seconds")]
+    pub timeout_seconds: u64,
+    #[serde(default)]
+    pub use_profile: Option<String>,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
 fn default_true() -> bool {
     true
 }
 
 fn default_timeout() -> u32 {
     30
+}
+
+fn default_page_text_timeout() -> u64 {
+    30_000
+}
+
+fn default_auth_timeout_seconds() -> u64 {
+    300
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -474,5 +516,112 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                 }
             }),
         },
+        ToolDefinition {
+            name: "page_text".into(),
+            description:
+                "Navigate to a URL using Playwright (real Chromium), wait for the page to render, \
+                 and return the visible text content. Handles JS-heavy SPAs that Scrapling can't."
+                    .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": { "type": "string", "description": "URL to load" },
+                    "wait_for": {
+                        "type": "string",
+                        "description": "CSS selector to wait for before extracting (default: networkidle)"
+                    },
+                    "selector": {
+                        "type": "string",
+                        "description": "Only extract text from elements matching this selector (default: body)"
+                    },
+                    "timeout_ms": {
+                        "type": "integer",
+                        "default": 30000,
+                        "description": "Max wait time in milliseconds"
+                    },
+                    "use_profile": {
+                        "type": "string",
+                        "description": "Persistent Chrome profile name (see `reach create --persist-profile`)"
+                    },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "auth_handoff".into(),
+            description:
+                "Open a URL in the sandbox's Chrome and pause until the user has authenticated. \
+                 Returns the noVNC URL the user should open to perform login. Optionally polls \
+                 for a CSS selector or URL substring that indicates auth is complete."
+                    .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": { "type": "string", "description": "URL that requires auth" },
+                    "wait_for_selector": {
+                        "type": "string",
+                        "description": "CSS selector that appears after successful auth"
+                    },
+                    "wait_for_url_contains": {
+                        "type": "string",
+                        "description": "Substring that should appear in the URL after auth"
+                    },
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "default": 300,
+                        "description": "How long to wait for the auth signal"
+                    },
+                    "use_profile": {
+                        "type": "string",
+                        "description": "Persistent Chrome profile name (see `reach create --persist-profile`)"
+                    },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_includes_new_tools() {
+        let names: Vec<String> = tool_definitions().into_iter().map(|t| t.name).collect();
+        assert!(names.contains(&"page_text".to_string()));
+        assert!(names.contains(&"auth_handoff".to_string()));
+    }
+
+    #[test]
+    fn page_text_schema_marks_url_required() {
+        let tool = tool_definitions()
+            .into_iter()
+            .find(|t| t.name == "page_text")
+            .unwrap();
+        let required = tool
+            .input_schema
+            .get("required")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert!(required.iter().any(|v| v == "url"));
+    }
+
+    #[test]
+    fn auth_handoff_schema_marks_url_required() {
+        let tool = tool_definitions()
+            .into_iter()
+            .find(|t| t.name == "auth_handoff")
+            .unwrap();
+        let required = tool
+            .input_schema
+            .get("required")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert!(required.iter().any(|v| v == "url"));
+    }
 }

@@ -1,5 +1,7 @@
 use clap::Args;
-use reach_cli::docker::DockerClient;
+use reach_cli::docker::{
+    AuthHandoffOptions, DockerClient, PageTextOptions, ProfileMount, novnc_url,
+};
 use reach_cli::mcp::{
     JsonRpcRequest, JsonRpcResponse, McpInitializeResult, RequestId, ToolResponse, tool_definitions,
 };
@@ -175,6 +177,115 @@ async fn dispatch_tool(
                 .and_then(|v| v.as_str())
                 .unwrap_or("echo");
             exec_cmd(docker, target, cmd).await
+        }
+        "page_text" => {
+            let url = match args.get("url").and_then(|v| v.as_str()) {
+                Some(u) if !u.is_empty() => u.to_string(),
+                _ => {
+                    return JsonRpcResponse::success(
+                        req.id.clone(),
+                        serde_json::to_value(ToolResponse::error(
+                            "page_text: missing required `url`",
+                        ))
+                        .unwrap(),
+                    );
+                }
+            };
+            let opts = PageTextOptions {
+                url,
+                wait_for: args
+                    .get("wait_for")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                selector: args
+                    .get("selector")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                timeout_ms: args
+                    .get("timeout_ms")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(30_000),
+                user_data_dir: args
+                    .get("use_profile")
+                    .and_then(|v| v.as_str())
+                    .map(ProfileMount::container_path_for),
+            };
+            match docker.page_text(target, &opts).await {
+                Ok(out) => match serde_json::to_string_pretty(&out) {
+                    Ok(s) => ToolResponse::text(s),
+                    Err(e) => ToolResponse::error(e.to_string()),
+                },
+                Err(e) => ToolResponse::error(e.to_string()),
+            }
+        }
+        "auth_handoff" => {
+            let url = match args.get("url").and_then(|v| v.as_str()) {
+                Some(u) if !u.is_empty() => u.to_string(),
+                _ => {
+                    return JsonRpcResponse::success(
+                        req.id.clone(),
+                        serde_json::to_value(ToolResponse::error(
+                            "auth_handoff: missing required `url`",
+                        ))
+                        .unwrap(),
+                    );
+                }
+            };
+            let opts = AuthHandoffOptions {
+                url,
+                wait_for_selector: args
+                    .get("wait_for_selector")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                wait_for_url_contains: args
+                    .get("wait_for_url_contains")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                timeout_seconds: args
+                    .get("timeout_seconds")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(300),
+                user_data_dir: args
+                    .get("use_profile")
+                    .and_then(|v| v.as_str())
+                    .map(ProfileMount::container_path_for),
+            };
+
+            let vnc = match docker.find(target).await {
+                Ok(sandbox) => sandbox
+                    .ports
+                    .novnc
+                    .map(|p| novnc_url("localhost", p))
+                    .unwrap_or_else(|| novnc_url("localhost", 6080)),
+                Err(_) => novnc_url("localhost", 6080),
+            };
+
+            match docker.auth_handoff(target, &opts).await {
+                Ok(out) => {
+                    let body = serde_json::json!({
+                        "status": out.status,
+                        "vnc_url": vnc,
+                        "url": out.url,
+                        "message": out.message,
+                        "instructions": "Open the vnc_url in your browser to log in. Re-call \
+                                          `auth_handoff` (with wait_for_*) or `page_text` once done.",
+                    });
+                    match serde_json::to_string_pretty(&body) {
+                        Ok(s) => ToolResponse::text(s),
+                        Err(e) => ToolResponse::error(e.to_string()),
+                    }
+                }
+                Err(e) => {
+                    let body = serde_json::json!({
+                        "status": "error",
+                        "vnc_url": vnc,
+                        "message": e.to_string(),
+                    });
+                    ToolResponse::error(
+                        serde_json::to_string_pretty(&body).unwrap_or_else(|_| e.to_string()),
+                    )
+                }
+            }
         }
         _ => ToolResponse::error(format!("unknown tool: {tool}")),
     };

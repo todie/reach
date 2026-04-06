@@ -149,3 +149,54 @@ fn exec_output_serializes() {
     assert_eq!(json["exit_code"], 0);
     assert_eq!(json["stdout"], "hello\n");
 }
+
+// ═══════════════════════════════════════════════════════════
+// Profile mounts
+// ═══════════════════════════════════════════════════════════
+
+#[test]
+fn profile_mount_container_path_uses_stable_root() {
+    assert_eq!(
+        ProfileMount::container_path_for("threads"),
+        "/home/sandbox/.config/google-chrome-profiles/threads"
+    );
+}
+
+#[test]
+fn profile_mount_host_path_joins_under_base() {
+    let base = std::path::Path::new("/var/lib/reach/profiles");
+    let host = ProfileMount::host_path_for(base, "threads");
+    assert_eq!(
+        host,
+        std::path::PathBuf::from("/var/lib/reach/profiles/threads")
+    );
+}
+
+#[test]
+fn labels_for_sandbox_includes_profile_label_when_set() {
+    let config = SandboxConfig {
+        profile: Some(ProfileMount {
+            name: "threads".into(),
+            host_path: std::path::PathBuf::from("/tmp/x"),
+            container_path: ProfileMount::container_path_for("threads"),
+        }),
+        ..SandboxConfig::default()
+    };
+    let labels = Labels::for_sandbox(&config);
+    assert_eq!(labels.get(Labels::PROFILE), Some(&"threads".to_string()));
+}
+
+#[test]
+fn labels_for_sandbox_omits_profile_label_when_unset() {
+    let config = SandboxConfig::default();
+    let labels = Labels::for_sandbox(&config);
+    assert!(!labels.contains_key(Labels::PROFILE));
+}
+
+#[test]
+fn novnc_url_uses_localhost_pattern() {
+    assert_eq!(
+        novnc_url("localhost", 6080),
+        "http://localhost:6080/vnc.html?autoconnect=1&resize=remote"
+    );
+}

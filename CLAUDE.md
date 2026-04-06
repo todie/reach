@@ -8,7 +8,7 @@ reach is an AI-drivable containerized desktop sandbox. It provides three things:
 2. A Rust CLI (`reach`) that manages sandbox containers from the host
 3. An MCP server (`reach serve`) that exposes sandbox tools to AI agents via SSE
 
-Current phase: **Phase 1 -- container desktop (complete), entering Phase 2**. All 8 CLI commands are implemented, the type system is designed (5 layers, 1197 lines), all 8 MCP tools are implemented, and e2e tests pass (88 tests: 52 unit + 36 e2e).
+Current phase: **Phase 1 -- container desktop (complete), entering Phase 2**. All 8 CLI commands are implemented, the type system is designed (5 layers, 1197 lines), 10 MCP tools are implemented (including `page_text` and `auth_handoff` for JS-heavy SPAs and login handoffs), and e2e tests pass (Phase 1: 88 tests, +3 e2e tests for the new tools).
 
 ## Tech Stack
 
@@ -106,3 +106,8 @@ GitHub Actions workflows in `.github/workflows/`:
 6. Configuration loading is in `crates/reach-cli/src/config.rs`.
 7. When adding a new CLI command, add the variant to `commands/mod.rs` and create the corresponding module.
 8. When adding a new supervised process, add it to `processes.rs` in reach-supervisor.
+9. Python helpers that run inside the container should be embedded as `pub const` strings in `docker.rs` (see `PAGE_TEXT_SCRIPT` / `AUTH_HANDOFF_SCRIPT`) so the binary stays self-contained.
+
+## Persistent Chrome Profiles
+
+`reach create --persist-profile <name>` mounts `~/.local/share/reach/profiles/<name>` (host) into the container at `/home/sandbox/.config/google-chrome-profiles/<name>`. The host root is overridable via `sandbox.profile_dir` in `~/.config/reach/config.toml`. Pass the same profile name to `page_text` / `auth_handoff` via `use_profile` so a one-time login carries across sandbox restarts.

@@ -277,6 +277,144 @@ Execute a Playwright Python script inside the sandbox.
 
 ---
 
+## page_text
+
+Navigate to a URL using Playwright (real Chromium on the sandbox display) and return the visible text content. This is the right tool for JavaScript-heavy single-page apps that Scrapling can't render.
+
+The browser is launched headed on Xvfb so you can watch the page through noVNC if you need to debug. Pass `use_profile` to reuse a persistent Chrome profile created with `reach create --persist-profile <name>` and skip re-authenticating every session.
+
+**Parameters:**
+
+```json
+{
+  "type": "object",
+  "required": ["url"],
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "URL to load"
+    },
+    "wait_for": {
+      "type": "string",
+      "description": "CSS selector to wait for before extracting (default: networkidle)"
+    },
+    "selector": {
+      "type": "string",
+      "description": "Only extract text from elements matching this selector (default: body)"
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "default": 30000,
+      "description": "Max wait time in milliseconds"
+    },
+    "use_profile": {
+      "type": "string",
+      "description": "Persistent Chrome profile name (see `reach create --persist-profile`)"
+    },
+    "sandbox": {
+      "type": "string"
+    }
+  }
+}
+```
+
+**Example call:**
+
+```json
+{
+  "name": "page_text",
+  "arguments": {
+    "url": "https://www.threads.com/@todie.ai/post/DWzHGm0FRJw",
+    "wait_for": "article",
+    "use_profile": "threads"
+  }
+}
+```
+
+**Returns:** JSON object with `status`, `text`, `url`, and `title` fields.
+
+```json
+{
+  "status": "ok",
+  "url": "https://www.threads.com/...",
+  "title": "Threads",
+  "text": "..."
+}
+```
+
+On failure the helper still returns JSON: `{"status": "error", "message": "..."}`.
+
+---
+
+## auth_handoff
+
+Open a URL in the sandbox's Chrome and pause until the user has authenticated. Returns the noVNC URL the user should open in their host browser to perform the login interactively. If `wait_for_selector` or `wait_for_url_contains` is supplied, the tool polls Playwright until the condition is met (or `timeout_seconds` elapses) and returns `status: "authenticated"`.
+
+The browser is launched as a `launch_persistent_context` so cookies and tokens persist for follow-up `page_text` calls — combine with `--persist-profile` on the host side to survive sandbox restarts.
+
+**Parameters:**
+
+```json
+{
+  "type": "object",
+  "required": ["url"],
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "URL that requires auth"
+    },
+    "wait_for_selector": {
+      "type": "string",
+      "description": "CSS selector that appears after successful auth"
+    },
+    "wait_for_url_contains": {
+      "type": "string",
+      "description": "Substring that should appear in the URL after auth"
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "default": 300,
+      "description": "How long to wait for the auth signal"
+    },
+    "use_profile": {
+      "type": "string",
+      "description": "Persistent Chrome profile name (see `reach create --persist-profile`)"
+    },
+    "sandbox": {
+      "type": "string"
+    }
+  }
+}
+```
+
+**Example call:**
+
+```json
+{
+  "name": "auth_handoff",
+  "arguments": {
+    "url": "https://www.threads.com/login",
+    "wait_for_url_contains": "/home",
+    "use_profile": "threads"
+  }
+}
+```
+
+**Returns:** JSON object with the noVNC URL the user should open.
+
+```json
+{
+  "status": "auth_required",
+  "vnc_url": "http://localhost:6080/vnc.html?autoconnect=1&resize=remote",
+  "url": "https://www.threads.com/login",
+  "instructions": "Open the vnc_url in your browser to log in. Re-call `auth_handoff` (with wait_for_*) or `page_text` once done."
+}
+```
+
+When polling completes successfully the response is `{"status": "authenticated", ...}`. On timeout it is `{"status": "timeout", ...}`.
+
+---
+
 ## exec
 
 Run a shell command inside the sandbox.

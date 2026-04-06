@@ -102,3 +102,46 @@ fn config_path_ends_with_reach_config_toml() {
     let path = ReachConfig::config_path();
     assert!(path.ends_with("reach/config.toml"));
 }
+
+// ═══════════════════════════════════════════════════════════
+// Profile directory
+// ═══════════════════════════════════════════════════════════
+
+#[test]
+fn profile_dir_defaults_to_none_in_serde() {
+    let config = ReachConfig::default();
+    assert!(config.sandbox.profile_dir.is_none());
+}
+
+#[test]
+fn profile_dir_can_be_overridden_via_toml() {
+    let config: ReachConfig = toml::from_str(
+        r#"
+        [sandbox]
+        profile_dir = "/srv/reach/profiles"
+        "#,
+    )
+    .unwrap();
+    assert_eq!(
+        config.sandbox.profile_dir,
+        Some(std::path::PathBuf::from("/srv/reach/profiles"))
+    );
+    assert_eq!(
+        config.sandbox.resolved_profile_dir(),
+        std::path::PathBuf::from("/srv/reach/profiles")
+    );
+}
+
+#[test]
+fn resolved_profile_dir_falls_back_when_unset() {
+    let config = ReachConfig::default();
+    let resolved = config.sandbox.resolved_profile_dir();
+    assert!(resolved.to_string_lossy().contains("reach"));
+    assert!(resolved.ends_with("profiles"));
+}
+
+#[test]
+fn default_profile_dir_helper_returns_reach_path() {
+    let dir = default_profile_dir();
+    assert!(dir.to_string_lossy().contains("reach"));
+}
