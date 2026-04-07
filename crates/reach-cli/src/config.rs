@@ -52,7 +52,6 @@ pub struct DockerConfig {
 // Defaults
 // ═══════════════════════════════════════════════════════════
 
-
 impl Default for SandboxDefaults {
     fn default() -> Self {
         Self {
@@ -74,7 +73,6 @@ impl Default for ServerConfig {
         }
     }
 }
-
 
 // ═══════════════════════════════════════════════════════════
 // Loading

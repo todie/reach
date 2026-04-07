@@ -87,7 +87,11 @@ fn labels_for_sandbox_includes_all_required_keys() {
 fn labels_filter_targets_managed_containers() {
     let filter = Labels::filter();
     let label_filters = filter.get("label").unwrap();
-    assert!(label_filters.iter().any(|f| f.contains("reach.sandbox=true")));
+    assert!(
+        label_filters
+            .iter()
+            .any(|f| f.contains("reach.sandbox=true"))
+    );
 }
 
 // ═══════════════════════════════════════════════════════════

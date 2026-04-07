@@ -1,5 +1,5 @@
-use reach_cli::docker::DockerClient;
 use clap::Args;
+use reach_cli::docker::DockerClient;
 
 #[derive(Args)]
 pub struct ExecArgs {

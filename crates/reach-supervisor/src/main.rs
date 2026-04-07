@@ -40,7 +40,9 @@ async fn main() -> anyhow::Result<()> {
         loop {
             tokio::time::sleep(Duration::from_secs(2)).await;
             let mut sup = supervision_shared.write().await;
-            if let Ok(restarted) = sup.check_and_restart().await && restarted > 0 {
+            if let Ok(restarted) = sup.check_and_restart().await
+                && restarted > 0
+            {
                 tracing::info!(restarted, "restarted crashed processes");
             }
         }

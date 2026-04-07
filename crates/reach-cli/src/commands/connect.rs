@@ -1,9 +1,8 @@
+use clap::Args;
 use reach_cli::docker::DockerClient;
 use reach_cli::mcp::{
-    JsonRpcRequest, JsonRpcResponse, McpInitializeResult, RequestId, ToolResponse,
-    tool_definitions,
+    JsonRpcRequest, JsonRpcResponse, McpInitializeResult, RequestId, ToolResponse, tool_definitions,
 };
-use clap::Args;
 use std::io::{BufRead, Write};
 
 #[derive(Args)]
@@ -63,7 +62,11 @@ async fn handle_request(
             JsonRpcResponse::success(req.id.clone(), serde_json::json!({ "tools": tools }))
         }
         "tools/call" => {
-            let tool_name = req.params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let tool_name = req
+                .params
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let arguments = req.params.get("arguments").cloned().unwrap_or_default();
             dispatch_tool(docker, target, req, tool_name, &arguments).await
         }
@@ -102,7 +105,12 @@ async fn dispatch_tool(
                 Some("middle") => "2",
                 _ => "1",
             };
-            exec_cmd(docker, target, &format!("xdotool mousemove {x} {y} click {btn}")).await
+            exec_cmd(
+                docker,
+                target,
+                &format!("xdotool mousemove {x} {y} click {btn}"),
+            )
+            .await
         }
         "type" => {
             let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
@@ -114,11 +122,17 @@ async fn dispatch_tool(
             .await
         }
         "key" => {
-            let combo = args.get("combo").and_then(|v| v.as_str()).unwrap_or("Return");
+            let combo = args
+                .get("combo")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Return");
             exec_cmd(docker, target, &format!("xdotool key {combo}")).await
         }
         "browse" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("about:blank");
+            let url = args
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("about:blank");
             exec_cmd(
                 docker,
                 target,
@@ -131,9 +145,19 @@ async fn dispatch_tool(
         }
         "scrape" => {
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            let selector = args.get("selector").and_then(|v| v.as_str()).unwrap_or("body");
-            let stealth = args.get("stealth").and_then(|v| v.as_bool()).unwrap_or(true);
-            let fetcher = if stealth { "StealthyFetcher" } else { "Fetcher" };
+            let selector = args
+                .get("selector")
+                .and_then(|v| v.as_str())
+                .unwrap_or("body");
+            let stealth = args
+                .get("stealth")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let fetcher = if stealth {
+                "StealthyFetcher"
+            } else {
+                "Fetcher"
+            };
             let script = format!(
                 "from scrapling import {fetcher}; r = {fetcher}().get('{url}'); \
                  elems = r.css('{selector}'); \
@@ -146,7 +170,10 @@ async fn dispatch_tool(
             exec_python(docker, target, script).await
         }
         "exec" => {
-            let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("echo");
+            let cmd = args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("echo");
             exec_cmd(docker, target, cmd).await
         }
         _ => ToolResponse::error(format!("unknown tool: {tool}")),
@@ -160,9 +187,11 @@ async fn exec_cmd(docker: &DockerClient, target: &str, cmd: &str) -> ToolRespons
         .exec(target, &["bash".into(), "-c".into(), cmd.into()])
         .await
     {
-        Ok(out) if out.exit_code == 0 => {
-            ToolResponse::text(if out.stdout.is_empty() { "ok".into() } else { out.stdout })
-        }
+        Ok(out) if out.exit_code == 0 => ToolResponse::text(if out.stdout.is_empty() {
+            "ok".into()
+        } else {
+            out.stdout
+        }),
         Ok(out) => ToolResponse::error(format!("exit {}: {}", out.exit_code, out.stderr)),
         Err(e) => ToolResponse::error(e.to_string()),
     }

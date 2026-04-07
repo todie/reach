@@ -1,5 +1,5 @@
-use reach_cli::docker::{DockerClient, SandboxStatus};
 use colored::Colorize;
+use reach_cli::docker::{DockerClient, SandboxStatus};
 
 pub async fn run() -> anyhow::Result<()> {
     let docker = DockerClient::new()?;

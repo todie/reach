@@ -1,12 +1,12 @@
-use reach_cli::docker::DockerClient;
-use reach_cli::mcp::{
-    JsonRpcRequest, JsonRpcResponse, McpInitializeResult, ToolResponse, tool_definitions,
-};
 use axum::extract::State;
 use axum::response::sse::{Event, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::Args;
+use reach_cli::docker::DockerClient;
+use reach_cli::mcp::{
+    JsonRpcRequest, JsonRpcResponse, McpInitializeResult, ToolResponse, tool_definitions,
+};
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -74,9 +74,7 @@ async fn mcp_handler(
 }
 
 async fn sse_handler() -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
-    let stream = tokio_stream::once(Ok(
-        Event::default().event("endpoint").data("/mcp"),
-    ));
+    let stream = tokio_stream::once(Ok(Event::default().event("endpoint").data("/mcp")));
     Sse::new(stream)
 }
 
@@ -91,7 +89,11 @@ async fn handle_mcp(state: &AppState, req: &JsonRpcRequest) -> JsonRpcResponse {
             JsonRpcResponse::success(req.id.clone(), serde_json::json!({ "tools": tools }))
         }
         "tools/call" => {
-            let tool = req.params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let tool = req
+                .params
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let args = req.params.get("arguments").cloned().unwrap_or_default();
             let sandbox_arg = args.get("sandbox").and_then(|v| v.as_str());
 
@@ -144,19 +146,34 @@ async fn dispatch(
                 Some("middle") => "2",
                 _ => "1",
             };
-            sh(state, target, &format!("xdotool mousemove {x} {y} click {btn}")).await
+            sh(
+                state,
+                target,
+                &format!("xdotool mousemove {x} {y} click {btn}"),
+            )
+            .await
         }
         "type" => {
             let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
-            sh(state, target, &format!("xdotool type -- '{}'", text.replace('\'', "'\\''")))
-                .await
+            sh(
+                state,
+                target,
+                &format!("xdotool type -- '{}'", text.replace('\'', "'\\''")),
+            )
+            .await
         }
         "key" => {
-            let combo = args.get("combo").and_then(|v| v.as_str()).unwrap_or("Return");
+            let combo = args
+                .get("combo")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Return");
             sh(state, target, &format!("xdotool key {combo}")).await
         }
         "browse" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("about:blank");
+            let url = args
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("about:blank");
             sh(
                 state,
                 target,
@@ -169,9 +186,19 @@ async fn dispatch(
         }
         "scrape" => {
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            let sel = args.get("selector").and_then(|v| v.as_str()).unwrap_or("body");
-            let stealth = args.get("stealth").and_then(|v| v.as_bool()).unwrap_or(true);
-            let f = if stealth { "StealthyFetcher" } else { "Fetcher" };
+            let sel = args
+                .get("selector")
+                .and_then(|v| v.as_str())
+                .unwrap_or("body");
+            let stealth = args
+                .get("stealth")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let f = if stealth {
+                "StealthyFetcher"
+            } else {
+                "Fetcher"
+            };
             py(
                 state,
                 target,
@@ -188,7 +215,10 @@ async fn dispatch(
             py(state, target, script).await
         }
         "exec" => {
-            let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("echo");
+            let cmd = args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("echo");
             sh(state, target, cmd).await
         }
         _ => ToolResponse::error(format!("unknown tool: {tool}")),
@@ -201,9 +231,11 @@ async fn sh(state: &AppState, target: &str, cmd: &str) -> ToolResponse {
         .exec(target, &["bash".into(), "-c".into(), cmd.into()])
         .await
     {
-        Ok(out) if out.exit_code == 0 => {
-            ToolResponse::text(if out.stdout.is_empty() { "ok".into() } else { out.stdout })
-        }
+        Ok(out) if out.exit_code == 0 => ToolResponse::text(if out.stdout.is_empty() {
+            "ok".into()
+        } else {
+            out.stdout
+        }),
         Ok(out) => ToolResponse::error(format!("exit {}: {}", out.exit_code, out.stderr)),
         Err(e) => ToolResponse::error(e.to_string()),
     }

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use bollard::container::{
-    Config, CreateContainerOptions, ListContainersOptions,
-    RemoveContainerOptions, StopContainerOptions,
+    Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
+    StopContainerOptions,
 };
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use bollard::models::{HostConfig, PortBinding};
@@ -261,10 +261,7 @@ impl DockerClient {
         let sandbox = self.find(target).await?;
 
         self.client
-            .stop_container(
-                &sandbox.container_id,
-                Some(StopContainerOptions { t: 10 }),
-            )
+            .stop_container(&sandbox.container_id, Some(StopContainerOptions { t: 10 }))
             .await
             .context("failed to stop container")?;
 
@@ -314,10 +311,7 @@ impl DockerClient {
                     status,
                     image: c.image.unwrap_or_default(),
                     ports,
-                    created_at: labels
-                        .get(Labels::CREATED)
-                        .cloned()
-                        .unwrap_or_default(),
+                    created_at: labels.get(Labels::CREATED).cloned().unwrap_or_default(),
                 }
             })
             .collect();
@@ -423,9 +417,10 @@ impl DockerClient {
                 .await;
 
             if let Ok(result) = out
-                && result.exit_code == 0 {
-                    return Ok(());
-                }
+                && result.exit_code == 0
+            {
+                return Ok(());
+            }
 
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
