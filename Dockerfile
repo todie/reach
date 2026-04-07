@@ -14,7 +14,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99
 ENV HOME=/home/sandbox
 
-# Layer 1: System deps — display, VNC, window manager, X11 tools
+# Layer 1: System deps — display, VNC, window manager, X11 tools, network
+# debug tooling. The network tools (iproute2, net-tools, dnsutils, jq) are
+# load-bearing for any agent that needs to introspect ports, sockets, or
+# DNS from inside the sandbox. Without them, debugging "is chrome's CDP
+# port actually listening?" requires apt-get inside a running container,
+# which is slow and bloats the layer.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     x11vnc \
@@ -26,8 +31,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-mono \
     dbus-x11 \
     curl \
+    wget \
     ca-certificates \
     gnupg \
+    iproute2 \
+    net-tools \
+    dnsutils \
+    iputils-ping \
+    jq \
+    procps \
+    less \
     python3 \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
