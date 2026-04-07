@@ -381,7 +381,7 @@ impl DockerClient {
                 &[
                     "bash".into(),
                     "-c".into(),
-                    "scrot -z /tmp/_reach_shot.png && base64 /tmp/_reach_shot.png && rm /tmp/_reach_shot.png".into(),
+                    "scrot -z /tmp/_reach_shot.png && base64 -w 0 /tmp/_reach_shot.png && rm /tmp/_reach_shot.png".into(),
                 ],
             )
             .await?;
@@ -391,8 +391,11 @@ impl DockerClient {
         }
 
         use base64::Engine;
+        // Defensive: strip any whitespace in case `base64 -w 0` is unavailable
+        // and the CLI falls back to line-wrapped output.
+        let clean: String = out.stdout.chars().filter(|c| !c.is_whitespace()).collect();
         let bytes = base64::engine::general_purpose::STANDARD
-            .decode(out.stdout.trim())
+            .decode(&clean)
             .context("failed to decode screenshot base64")?;
 
         Ok(bytes)
