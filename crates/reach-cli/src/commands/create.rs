@@ -1,7 +1,7 @@
-use reach_cli::config::ReachConfig;
-use reach_cli::docker::{DockerClient, Resolution, SandboxConfig, SandboxPorts};
 use clap::Args;
 use colored::Colorize;
+use reach_cli::config::ReachConfig;
+use reach_cli::docker::{DockerClient, Resolution, SandboxConfig, SandboxPorts};
 use std::time::Duration;
 
 #[derive(Args)]

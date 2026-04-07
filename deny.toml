@@ -1,10 +1,28 @@
+# cargo-deny advisories configuration.
+# `unmaintained` takes scope values {all, workspace, transitive, none} —
+# "workspace" fails the build only when a direct workspace dependency is
+# marked unmaintained in the advisory DB, without failing on transitive
+# deps the workspace doesn't control. `vulnerability` was removed from the
+# schema in cargo-deny 0.14+ (cargo-deny now always denies vulnerabilities
+# in its default pipeline).
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
+unmaintained = "workspace"
 yanked = "warn"
+ignore = [
+    # protobuf 2.28.0 is pulled in transitively by prometheus 0.13 (our
+    # metrics exporter in reach-supervisor). RUSTSEC-2024-0437 is a stack
+    # overflow on parsing untrusted protobuf INPUT — reach-supervisor only
+    # EXPORTS metrics (serialises to text format over HTTP) and never
+    # parses protobuf input from the network, so the vector does not
+    # apply. Follow-up: upgrade to a metrics crate that uses protobuf 3.x
+    # or drop prometheus in favour of a text-only exporter. Tracked in
+    # the reach roadmap.
+    "RUSTSEC-2024-0437",
+]
 
+# cargo-deny 0.14+ removed the `unlicensed` key; the tool now treats
+# unlicensed crates as deny-by-default inside the licenses pipeline.
 [licenses]
-unlicensed = "deny"
 allow = [
     "MIT",
     "Apache-2.0",

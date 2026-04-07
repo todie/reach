@@ -1,6 +1,6 @@
-use reach_cli::docker::DockerClient;
 use clap::Args;
 use colored::Colorize;
+use reach_cli::docker::DockerClient;
 
 #[derive(Args)]
 pub struct VncArgs {

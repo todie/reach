@@ -9,10 +9,7 @@ use reach_cli::mcp::*;
 
 #[test]
 fn jsonrpc_response_success_has_no_error_field() {
-    let resp = JsonRpcResponse::success(
-        RequestId::Number(1),
-        serde_json::json!({"status": "ok"}),
-    );
+    let resp = JsonRpcResponse::success(RequestId::Number(1), serde_json::json!({"status": "ok"}));
     let json = serde_json::to_string(&resp).unwrap();
     assert!(json.contains("\"result\""));
     assert!(!json.contains("\"error\""));
@@ -139,15 +136,13 @@ fn screenshot_tool_has_no_required_fields() {
 
 #[test]
 fn screenshot_params_default_format_is_png() {
-    let params: ScreenshotParams =
-        serde_json::from_str("{}").unwrap();
+    let params: ScreenshotParams = serde_json::from_str("{}").unwrap();
     assert!(matches!(params.format, ImageFormat::Png));
 }
 
 #[test]
 fn click_params_default_button_is_left() {
-    let params: ClickParams =
-        serde_json::from_str(r#"{"x": 100, "y": 200}"#).unwrap();
+    let params: ClickParams = serde_json::from_str(r#"{"x": 100, "y": 200}"#).unwrap();
     assert!(matches!(params.button, MouseButton::Left));
     assert_eq!(params.x, 100);
     assert_eq!(params.y, 200);
@@ -155,8 +150,7 @@ fn click_params_default_button_is_left() {
 
 #[test]
 fn browse_params_default_headed_is_true() {
-    let params: BrowseParams =
-        serde_json::from_str(r#"{"url": "https://example.com"}"#).unwrap();
+    let params: BrowseParams = serde_json::from_str(r#"{"url": "https://example.com"}"#).unwrap();
     assert!(params.headed);
 }
 
@@ -169,8 +163,7 @@ fn scrape_params_default_stealth_is_true() {
 
 #[test]
 fn exec_params_default_timeout_is_30() {
-    let params: ExecParams =
-        serde_json::from_str(r#"{"command": "ls"}"#).unwrap();
+    let params: ExecParams = serde_json::from_str(r#"{"command": "ls"}"#).unwrap();
     assert_eq!(params.timeout, 30);
 }
 
@@ -241,10 +234,7 @@ fn sse_endpoint_message_carries_uri() {
 
 #[test]
 fn sse_message_wraps_jsonrpc_response() {
-    let resp = JsonRpcResponse::success(
-        RequestId::Number(1),
-        serde_json::json!({"tools": []}),
-    );
+    let resp = JsonRpcResponse::success(RequestId::Number(1), serde_json::json!({"tools": []}));
     let msg = SseMessage::message(&resp);
     assert_eq!(msg.event, "message");
     assert!(msg.data.contains("\"jsonrpc\""));

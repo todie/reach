@@ -23,7 +23,10 @@ pub struct ProcessSpec {
 
 #[derive(Debug, Clone)]
 pub enum RestartPolicy {
-    Always { max_restarts: u32, backoff: Duration },
+    Always {
+        max_restarts: u32,
+        backoff: Duration,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -203,10 +206,7 @@ impl Supervisor {
                     backoff: Duration::from_secs(1),
                 },
                 depends_on: vec![],
-                ready_check: ReadyCheck::FileExists(format!(
-                    "/tmp/.X11-unix/X{}",
-                    self.display
-                )),
+                ready_check: ReadyCheck::FileExists(format!("/tmp/.X11-unix/X{}", self.display)),
             },
             ProcessSpec {
                 name: "openbox",

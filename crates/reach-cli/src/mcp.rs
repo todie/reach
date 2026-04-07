@@ -227,7 +227,9 @@ pub enum ExtractMode {
     Html,
     /// Extract a specific attribute value
     #[serde(rename = "attr")]
-    Attribute { name: String },
+    Attribute {
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
