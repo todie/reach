@@ -1,0 +1,54 @@
+name: Publish Changelog to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CHANGELOG.md
+      - .github/workflows/pages.yml
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-changelog:
+    name: Publish Changelog to gh-pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout gh-pages branch
+        run: |
+          git fetch origin gh-pages
+          git worktree add gh-pages origin/gh-pages
+
+      - name: Generate changelog page
+        run: |
+          cat > gh-pages/changelog.md << 'EOF'
+          # Changelog
+
+          > Changelog for [reach](https://github.com/todie/reach) — AI-drivable containerized desktop sandbox.
+
+          For the latest changelog, see [CHANGELOG.md](https://github.com/todie/reach/blob/main/CHANGELOG.md) in the repository.
+
+          ## Latest Version
+          EOF
+          tail -n +3 CHANGELOG.md >> gh-pages/changelog.md
+
+      - name: Update gh-pages
+        working-directory: gh-pages
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add changelog.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update changelog from main branch"
+            git push origin gh-pages
+          fi
