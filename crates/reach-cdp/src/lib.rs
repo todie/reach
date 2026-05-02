@@ -20,6 +20,9 @@ const DEFAULT_BROWSERD_URL: &str = "http://127.0.0.1:8401";
 pub struct CdpClient {
     http: reqwest::Client,
     browserd_url: String,
+    /// When set, every command is routed to this CDP session. `None` defers to
+    /// the daemon's default healing session for back-compat.
+    session_id: Option<String>,
 }
 
 impl CdpClient {
@@ -28,6 +31,7 @@ impl CdpClient {
         Self {
             http: reqwest::Client::new(),
             browserd_url: trim_trailing_slash(browserd_url.into()),
+            session_id: None,
         }
     }
 
@@ -41,6 +45,18 @@ impl CdpClient {
         &self.browserd_url
     }
 
+    /// Return a clone of this client pinned to a specific CDP session id.
+    pub fn with_session(&self, session_id: impl Into<String>) -> Self {
+        let mut clone = self.clone();
+        clone.session_id = Some(session_id.into());
+        clone
+    }
+
+    /// Return the session id this client is pinned to, if any.
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
     /// Create a client and verify that `reach-browserd` responds to CDP.
     pub async fn connect(browserd_url: impl Into<String>) -> Result<Self> {
         let client = Self::new(browserd_url);
@@ -50,6 +66,38 @@ impl CdpClient {
         Ok(client)
     }
 
+    /// Mint a fresh browser context with optional proxy and return a guard
+    /// owning the context and a session pre-attached to a target inside it.
+    pub async fn create_context(&self, options: NewContext) -> Result<BrowserContext> {
+        let response = self
+            .http
+            .post(format!("{}/cdp/context/create", self.browserd_url))
+            .json(&options)
+            .send()
+            .await
+            .context("create_context request to reach-browserd")?
+            .error_for_status()
+            .context("reach-browserd returned an HTTP error for create_context")?
+            .json::<CreateContextResponse>()
+            .await
+            .context("decoding create_context response")?;
+
+        debug!(
+            browser_context_id = %response.browser_context_id,
+            target_id = %response.target_id,
+            session_id = %response.session_id,
+            "minted CDP browser context"
+        );
+
+        Ok(BrowserContext {
+            client: self.clone(),
+            browser_context_id: response.browser_context_id,
+            target_id: response.target_id,
+            session_id: response.session_id,
+            disposed: false,
+        })
+    }
+
     /// Send a typed CDP command through `reach-browserd`.
     pub async fn send<C, R>(&self, command: C) -> Result<CdpResponse<R>>
     where
@@ -57,12 +105,13 @@ impl CdpClient {
         R: DeserializeOwned,
     {
         let method = command.method();
-        debug!(method, browserd_url = %self.browserd_url, "sending CDP command");
+        debug!(method, browserd_url = %self.browserd_url, session_id = ?self.session_id, "sending CDP command");
 
         let request = CdpRequest {
             method: method.to_string(),
             params: serde_json::to_value(command.params())
                 .context("failed to serialize CDP command params")?,
+            session_id: self.session_id.clone(),
         };
 
         let response = self
@@ -93,6 +142,123 @@ impl CdpClient {
 struct CdpRequest {
     method: String,
     params: Value,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "session_id")]
+    session_id: Option<String>,
+}
+
+/// Options for [`CdpClient::create_context`].
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct NewContext {
+    /// Optional proxy URL such as `http://host:port` or `socks5://host:port`.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "proxy_server")]
+    pub proxy_server: Option<String>,
+    /// Optional `;`-separated list of bypass patterns.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "proxy_bypass_list")]
+    pub proxy_bypass_list: Option<String>,
+    /// Optional initial URL to navigate the freshly minted target to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateContextResponse {
+    browser_context_id: String,
+    target_id: String,
+    session_id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DisposeContextRequest<'a> {
+    browser_context_id: &'a str,
+}
+
+/// Owned handle to a CDP browser context minted via `reach-browserd`.
+///
+/// Drop runs a best-effort, fire-and-forget dispose; for guaranteed cleanup
+/// call [`BrowserContext::close`] explicitly so any errors surface.
+#[derive(Debug)]
+pub struct BrowserContext {
+    client: CdpClient,
+    browser_context_id: String,
+    target_id: String,
+    session_id: String,
+    disposed: bool,
+}
+
+impl BrowserContext {
+    /// Return a `CdpClient` pinned to this context's session id.
+    pub fn client(&self) -> CdpClient {
+        self.client.with_session(self.session_id.clone())
+    }
+
+    /// `browserContextId` returned by Chrome.
+    pub fn browser_context_id(&self) -> &str {
+        &self.browser_context_id
+    }
+
+    /// `targetId` of the page minted inside the context.
+    pub fn target_id(&self) -> &str {
+        &self.target_id
+    }
+
+    /// Flattened sessionId attached to the target.
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    /// Explicitly dispose the context. Idempotent.
+    pub async fn close(mut self) -> Result<()> {
+        if self.disposed {
+            return Ok(());
+        }
+        let body = DisposeContextRequest {
+            browser_context_id: &self.browser_context_id,
+        };
+        self.client
+            .http
+            .post(format!("{}/cdp/context/dispose", self.client.browserd_url))
+            .json(&body)
+            .send()
+            .await
+            .context("dispose_context request to reach-browserd")?
+            .error_for_status()
+            .context("reach-browserd returned an HTTP error for dispose_context")?;
+        self.disposed = true;
+        Ok(())
+    }
+}
+
+impl Drop for BrowserContext {
+    fn drop(&mut self) {
+        if self.disposed {
+            return;
+        }
+        // Async cleanup in `Drop` is unreliable. Spawn a fire-and-forget task
+        // so callers who forgot to call `close().await` still get a best-effort
+        // dispose. Errors are logged, not propagated.
+        let client = self.client.clone();
+        let id = self.browser_context_id.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let body = DisposeContextRequest {
+                    browser_context_id: &id,
+                };
+                if let Err(error) = client
+                    .http
+                    .post(format!("{}/cdp/context/dispose", client.browserd_url))
+                    .json(&body)
+                    .send()
+                    .await
+                {
+                    tracing::warn!(
+                        error = %error,
+                        browser_context_id = %id,
+                        "best-effort browser context dispose failed in Drop"
+                    );
+                }
+            });
+        }
+    }
 }
 
 /// Top-level response returned by a CDP command.

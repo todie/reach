@@ -3,14 +3,14 @@
 use crate::{ProxyConfig, ReachScraper, ScrapeMetadata, ScrapeOutput};
 use anyhow::{Context, Result, anyhow, bail};
 use reach_cdp::{
-    CdpClient, CdpCommand,
+    CdpClient, CdpCommand, NewContext,
     commands::{
         Cookie, NetworkEnable, NetworkEnableResult, NetworkGetCookies, NetworkGetCookiesResult,
         PageNavigate, PageNavigateResult, RuntimeEvaluate, RuntimeEvaluateResult,
     },
 };
 use serde::de::DeserializeOwned;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 const DEFAULT_LOAD_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_NETWORK_IDLE_MS: u64 = 500;
@@ -51,6 +51,13 @@ impl<'a> CdpFetcher<'a> {
     }
 
     /// Fetch a URL through the browser and return the rendered HTML.
+    ///
+    /// When `proxy` is set, mints a fresh browser context with that proxy via
+    /// `reach-browserd`, drives the navigation through it, and disposes the
+    /// context on the way out. Authenticated proxies are rejected up front
+    /// with a clear error since `Target.createBrowserContext` does not accept
+    /// credentials; supporting them requires `Fetch.authRequired` interception
+    /// which is a follow-up.
     pub async fn fetch(
         &self,
         url: impl Into<String>,
@@ -66,16 +73,58 @@ impl<'a> CdpFetcher<'a> {
         );
 
         if let Some(proxy) = proxy.as_ref() {
-            self.configure_proxy(proxy).await?;
+            reject_authenticated_proxy(proxy)?;
+            let context = self
+                .cdp
+                .create_context(NewContext {
+                    proxy_server: Some(proxy.url.clone()),
+                    proxy_bypass_list: None,
+                    url: Some(url.clone()),
+                })
+                .await
+                .context("creating CDP browser context for proxy")?;
+            let scoped_client = self.cdp.with_session(context.session_id());
+            let scoped_fetcher = CdpFetcher::new(&scoped_client)
+                .with_load_timeout_ms(self.load_timeout_ms)
+                .with_network_idle_ms(self.network_idle_ms);
+            let outcome = scoped_fetcher.fetch_in_session(&url).await;
+            if let Err(error) = context.close().await {
+                warn!(error = %error, "failed to dispose proxy browser context");
+            }
+            return outcome.map(|mut out| {
+                out.metadata.proxy = Some(proxy.clone());
+                out
+            });
         }
 
+        self.fetch_in_session(&url).await
+    }
+
+    /// Return cookies from the current browser context.
+    pub async fn get_cookies(&self, urls: Option<Vec<String>>) -> Result<Vec<Cookie>> {
+        let command = match urls {
+            Some(urls) => NetworkGetCookies::for_urls(urls),
+            None => NetworkGetCookies::new(),
+        };
+
+        let result: NetworkGetCookiesResult = self
+            .send(command)
+            .await
+            .context("failed to get cookies via CDP")?;
+
+        Ok(result.cookies)
+    }
+
+    /// Drive a navigation + extraction in whichever session this fetcher's
+    /// `cdp` is pinned to (default or context-scoped).
+    async fn fetch_in_session(&self, url: &str) -> Result<ScrapeOutput> {
         let _: NetworkEnableResult = self
             .send(NetworkEnable::new())
             .await
             .context("failed to enable CDP network domain")?;
 
         let navigation: PageNavigateResult = self
-            .send(PageNavigate::new(url.clone()))
+            .send(PageNavigate::new(url.to_string()))
             .await
             .context("failed to navigate via CDP")?;
 
@@ -96,38 +145,14 @@ impl<'a> CdpFetcher<'a> {
         debug!(url = %url, final_url = ?final_url, "completed CDP scrape");
 
         Ok(ScrapeOutput {
-            url,
+            url: url.to_string(),
             content: Some(html),
             metadata: ScrapeMetadata {
                 final_url,
                 status_code: None,
-                proxy,
+                proxy: None,
             },
         })
-    }
-
-    /// Return cookies from the current browser context.
-    pub async fn get_cookies(&self, urls: Option<Vec<String>>) -> Result<Vec<Cookie>> {
-        let command = match urls {
-            Some(urls) => NetworkGetCookies::for_urls(urls),
-            None => NetworkGetCookies::new(),
-        };
-
-        let result: NetworkGetCookiesResult = self
-            .send(command)
-            .await
-            .context("failed to get cookies via CDP")?;
-
-        Ok(result.cookies)
-    }
-
-    async fn configure_proxy(&self, proxy: &ProxyConfig) -> Result<()> {
-        debug!(proxy_url = %proxy.url, "per-request CDP proxy configuration is not active yet");
-        // TODO: CDP proxy configuration is target/browser-context specific and
-        // reach-browserd currently attaches to an existing target. Add browserd
-        // support for creating a context with proxyServer/proxyBypassList before
-        // using this fetcher for per-request proxy routing.
-        Ok(())
     }
 
     async fn wait_for_load_and_network_idle(&self) -> Result<()> {
@@ -233,4 +258,16 @@ new Promise((resolve) => {{
             .into_result()
             .map_err(|error| anyhow!("CDP command {method} failed: {}", error.message))
     }
+}
+
+fn reject_authenticated_proxy(proxy: &ProxyConfig) -> Result<()> {
+    if proxy.username.is_some() || proxy.password.is_some() {
+        bail!(
+            "authenticated proxies are not yet supported on the CDP path \
+             ({}). Use the static fetcher, or wait for `Fetch.authRequired` \
+             interception support in reach-browserd.",
+            proxy.url
+        );
+    }
+    Ok(())
 }
