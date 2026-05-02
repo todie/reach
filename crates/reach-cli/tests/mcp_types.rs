@@ -63,7 +63,7 @@ fn mcp_initialize_default_has_correct_protocol_version() {
 #[test]
 fn all_tools_are_registered() {
     let tools = tool_definitions();
-    assert_eq!(tools.len(), 19);
+    assert_eq!(tools.len(), 20);
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"screenshot"));
@@ -85,6 +85,7 @@ fn all_tools_are_registered() {
     assert!(names.contains(&"scrape_agent"));
     assert!(names.contains(&"scrape_learn"));
     assert!(names.contains(&"scrape_recover"));
+    assert!(names.contains(&"scrape_resilient"));
 }
 
 #[test]

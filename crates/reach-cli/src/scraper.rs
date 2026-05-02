@@ -13,8 +13,9 @@ use reach_cdp::{
     commands::{PageNavigate, PageNavigateResult, RuntimeEvaluate, RuntimeEvaluateResult},
 };
 use reach_scraper::{
-    AdaptiveMemory, CdpFetcher, ElementFingerprint, HybridFetcher, ProxyConfig, ScrapeOutput,
-    StaticFetcher, url_components,
+    AdaptiveMemory, CdpFetcher, ElementFingerprint, ExtractMode, HybridFetcher, ProxyConfig,
+    ResilientOutcome, ResilientRequest, ScrapeOutput, StaticFetcher, ValidateOptions,
+    resilient_extract, url_components,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -161,6 +162,44 @@ pub async fn run_learn(
         selector,
         fingerprint,
     })
+}
+
+/// Run the full Observe → … → Repair loop and persist learnings.
+pub async fn run_resilient(
+    docker: &DockerClient,
+    state: &ScraperState,
+    sandbox: &str,
+    request: ResilientRequest,
+) -> Result<ResilientOutcome> {
+    let cdp = cdp_client_for(docker, sandbox).await?;
+    let _guard = state.cdp_lock.lock().await;
+    resilient_extract(&cdp, &state.memory, &request).await
+}
+
+/// Parse the loose JSON shape accepted on the MCP wire into a typed
+/// [`ExtractMode`]. Defaults to `text` when the payload is empty/null.
+pub fn parse_extract_mode(value: &Value) -> Result<ExtractMode> {
+    if value.is_null() {
+        return Ok(ExtractMode::Text);
+    }
+    if let Some(s) = value.as_str() {
+        return match s {
+            "text" => Ok(ExtractMode::Text),
+            "html" => Ok(ExtractMode::Html),
+            other => bail!("unknown extract mode `{other}`"),
+        };
+    }
+    serde_json::from_value(value.clone())
+        .with_context(|| format!("invalid extract mode payload: {value}"))
+}
+
+/// Parse the loose JSON shape into [`ValidateOptions`].
+pub fn parse_validate_options(value: &Value) -> Result<ValidateOptions> {
+    if value.is_null() {
+        return Ok(ValidateOptions::default());
+    }
+    serde_json::from_value(value.clone())
+        .with_context(|| format!("invalid validate payload: {value}"))
 }
 
 /// Look up AdaptiveMemory candidates for a URL.

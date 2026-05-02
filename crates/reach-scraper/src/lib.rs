@@ -12,6 +12,8 @@ use std::collections::VecDeque;
 
 /// SQLite-backed adaptive selector memory.
 pub mod adaptive;
+/// Self-healing extraction loop on top of CDP and adaptive memory.
+pub mod agent;
 /// CDP-backed page fetcher.
 pub mod cdp_fetcher;
 /// Fetcher that starts with static HTTP and escalates to CDP when blocked.
@@ -20,6 +22,10 @@ pub mod hybrid_fetcher;
 pub mod static_fetcher;
 pub use adaptive::{
     AdaptiveMemory, ElementFingerprint, ElementFingerprintCandidate, SCHEMA_VERSION, url_components,
+};
+pub use agent::{
+    ExtractMode, RepairStrategy, ResilientOutcome, ResilientRequest, SelectorSource,
+    ValidateOptions, resilient_extract,
 };
 pub use cdp_fetcher::CdpFetcher;
 pub use hybrid_fetcher::HybridFetcher;

@@ -161,6 +161,8 @@ pub enum ToolCall {
     ScrapeLearn(ScrapeLearnParams),
     #[serde(rename = "scrape_recover")]
     ScrapeRecover(ScrapeRecoverParams),
+    #[serde(rename = "scrape_resilient")]
+    ScrapeResilient(ScrapeResilientParams),
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -389,6 +391,20 @@ pub struct ScrapeRecoverParams {
     pub url: String,
     #[serde(default)]
     pub selector: Option<String>,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapeResilientParams {
+    pub url: String,
+    pub selector: String,
+    #[serde(default)]
+    pub extract: serde_json::Value,
+    #[serde(default = "default_true")]
+    pub navigate: bool,
+    #[serde(default)]
+    pub validate: serde_json::Value,
     #[serde(default)]
     pub sandbox: Option<String>,
 }
@@ -808,8 +824,7 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
             name: "scrape_recover".into(),
             description: "Look up AdaptiveMemory candidates for a URL (by domain + \
                 path). Optionally filter by original selector. Returns a ranked \
-                list; the actual repair attempt lives in `scrape_resilient` \
-                (Step 2)."
+                list; the actual repair attempt lives in `scrape_resilient`."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -817,6 +832,52 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "url": { "type": "string" },
                     "selector": { "type": "string" },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "scrape_resilient".into(),
+            description: "Self-healing extract loop: navigate, try selector, \
+                validate (non-empty + optional regex), and on miss fall back to \
+                AdaptiveMemory candidates ranked by text-hash → dom-path → bbox. \
+                On repair success the candidate's successful_uses is incremented \
+                and a fresh fingerprint is persisted under the original \
+                selector."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["url", "selector"],
+                "properties": {
+                    "url": { "type": "string" },
+                    "selector": { "type": "string" },
+                    "navigate": { "type": "boolean", "default": true },
+                    "extract": {
+                        "oneOf": [
+                            { "const": "text" },
+                            { "const": "html" },
+                            {
+                                "type": "object",
+                                "required": ["attr"],
+                                "properties": {
+                                    "attr": {
+                                        "type": "object",
+                                        "required": ["name"],
+                                        "properties": { "name": { "type": "string" } }
+                                    }
+                                }
+                            }
+                        ],
+                        "default": "text"
+                    },
+                    "validate": {
+                        "type": "object",
+                        "properties": {
+                            "non_empty": { "type": "boolean", "default": true },
+                            "matches": { "type": "string",
+                                "description": "JS-flavored regex applied to the value" }
+                        }
+                    },
                     "sandbox": { "type": "string" }
                 }
             }),

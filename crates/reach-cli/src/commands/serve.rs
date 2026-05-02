@@ -12,6 +12,7 @@ use reach_cli::mcp::{
     tool_definitions,
 };
 use reach_cli::scraper::{self, ScraperState};
+use reach_scraper::ResilientRequest;
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -486,6 +487,44 @@ async fn dispatch(
                 .filter(|s| !s.is_empty())
                 .map(str::to_string);
             match scraper::run_recover(&state.scraper, url, selector_filter).await {
+                Ok(out) => json_text(&out),
+                Err(e) => ToolResponse::error(e.to_string()),
+            }
+        }
+        "scrape_resilient" => {
+            let url = match args.get("url").and_then(|v| v.as_str()) {
+                Some(u) if !u.is_empty() => u.to_string(),
+                _ => return ToolResponse::error("scrape_resilient: missing required `url`"),
+            };
+            let selector = match args.get("selector").and_then(|v| v.as_str()) {
+                Some(s) if !s.is_empty() => s.to_string(),
+                _ => return ToolResponse::error("scrape_resilient: missing required `selector`"),
+            };
+            let extract = match scraper::parse_extract_mode(
+                args.get("extract").unwrap_or(&serde_json::Value::Null),
+            ) {
+                Ok(m) => m,
+                Err(e) => return ToolResponse::error(e.to_string()),
+            };
+            let validate = match scraper::parse_validate_options(
+                args.get("validate").unwrap_or(&serde_json::Value::Null),
+            ) {
+                Ok(v) => v,
+                Err(e) => return ToolResponse::error(e.to_string()),
+            };
+            let navigate = args
+                .get("navigate")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+
+            let request = ResilientRequest {
+                url,
+                selector,
+                extract,
+                navigate,
+                validate,
+            };
+            match scraper::run_resilient(&state.docker, &state.scraper, target, request).await {
                 Ok(out) => json_text(&out),
                 Err(e) => ToolResponse::error(e.to_string()),
             }
