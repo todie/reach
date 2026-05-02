@@ -265,8 +265,14 @@ impl Supervisor {
                     "--remote-debugging-address=127.0.0.1".into(),
                     "--no-sandbox".into(),
                     "--disable-dev-shm-usage".into(),
-                    "--disable-gpu".into(),
-                    "--disable-software-rasterizer".into(),
+                    // Enable software-rendered WebGL via SwiftShader. Without
+                    // a working WebGL context the sandbox itself looks like a
+                    // bot regardless of what stealth shims claim about
+                    // VENDOR/RENDERER strings. `--enable-unsafe-swiftshader`
+                    // is required from Chrome 120+ to opt into the fallback.
+                    "--use-gl=angle".into(),
+                    "--use-angle=swiftshader".into(),
+                    "--enable-unsafe-swiftshader".into(),
                     "--user-data-dir=/tmp/chrome-profile".into(),
                     "--window-position=0,0".into(),
                     format!("--window-size={},{}", self.width, self.height),

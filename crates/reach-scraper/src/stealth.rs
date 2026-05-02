@@ -302,12 +302,15 @@ pub async fn apply_profile(cdp: &CdpClient, profile: &FingerprintProfile) -> Res
     .await
     .context("Emulation.setDeviceMetricsOverride")?;
 
+    // Chrome rejects `maxTouchPoints: 0`; only send the field when touch is on.
+    let touch_max = if profile.max_touch_points > 0 {
+        Some(profile.max_touch_points)
+    } else {
+        None
+    };
     let _: EmulationSetTouchEmulationEnabledResult = send(
         cdp,
-        EmulationSetTouchEmulationEnabled::new(
-            profile.max_touch_points > 0,
-            Some(profile.max_touch_points),
-        ),
+        EmulationSetTouchEmulationEnabled::new(profile.max_touch_points > 0, touch_max),
     )
     .await
     .context("Emulation.setTouchEmulationEnabled")?;
