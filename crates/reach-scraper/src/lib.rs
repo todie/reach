@@ -10,12 +10,15 @@ use reach_cdp::CdpClient;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
+/// SQLite-backed adaptive selector memory.
+pub mod adaptive;
 /// CDP-backed page fetcher.
 pub mod cdp_fetcher;
 /// Fetcher that starts with static HTTP and escalates to CDP when blocked.
 pub mod hybrid_fetcher;
 /// Static HTTP fetcher with cookie and proxy support.
 pub mod static_fetcher;
+pub use adaptive::{AdaptiveMemory, ElementFingerprint, ElementFingerprintCandidate};
 pub use cdp_fetcher::CdpFetcher;
 pub use hybrid_fetcher::HybridFetcher;
 pub use static_fetcher::StaticFetcher;
