@@ -196,21 +196,20 @@ async fn dispatch(
                 .get("stealth")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
-            let f = if stealth {
-                "StealthyFetcher"
-            } else {
-                "Fetcher"
-            };
-            py(
-                state,
-                target,
-                &format!(
-                    "from scrapling import {f}; r = {f}().get('{url}'); \
+            let script = if stealth {
+                format!(
+                    "from scrapling.fetchers import StealthyFetcher; r = StealthyFetcher.fetch('{url}', headless=True); \
                      elems = r.css('{sel}'); \
                      import json; print(json.dumps([{{'content': e.text, 'tag': e.tag}} for e in elems]))"
-                ),
-            )
-            .await
+                )
+            } else {
+                format!(
+                    "from scrapling.fetchers import Fetcher; r = Fetcher.get('{url}'); \
+                     elems = r.css('{sel}'); \
+                     import json; print(json.dumps([{{'content': e.text, 'tag': e.tag}} for e in elems]))"
+                )
+            };
+            py(state, target, &script).await
         }
         "playwright_eval" => {
             let script = args.get("script").and_then(|v| v.as_str()).unwrap_or("");
@@ -318,6 +317,96 @@ async fn dispatch(
                 }
             }
         }
+        "browser_cdp" => {
+            let method = args.get("method").and_then(|v| v.as_str()).unwrap_or("");
+            let params = args.get("params").cloned().unwrap_or(serde_json::json!({}));
+            cdp(state, target, method, params).await
+        }
+        "browser_js" => {
+            let expression = args
+                .get("expression")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            cdp(
+                state,
+                target,
+                "Runtime.evaluate",
+                serde_json::json!({
+                    "expression": expression,
+                    "returnByValue": true
+                }),
+            )
+            .await
+        }
+        "browser_click" => {
+            let x = args.get("x").and_then(|v| v.as_i64()).unwrap_or(0);
+            let y = args.get("y").and_then(|v| v.as_i64()).unwrap_or(0);
+            cdp(
+                state,
+                target,
+                "Input.dispatchMouseEvent",
+                serde_json::json!({
+                    "type": "mousePressed",
+                    "x": x,
+                    "y": y,
+                    "button": "left",
+                    "clickCount": 1
+                }),
+            )
+            .await;
+            cdp(
+                state,
+                target,
+                "Input.dispatchMouseEvent",
+                serde_json::json!({
+                    "type": "mouseReleased",
+                    "x": x,
+                    "y": y,
+                    "button": "left",
+                    "clickCount": 1
+                }),
+            )
+            .await
+        }
+        "browser_type" => {
+            let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            for ch in text.chars() {
+                cdp(
+                    state,
+                    target,
+                    "Input.dispatchKeyEvent",
+                    serde_json::json!({
+                        "type": "char",
+                        "text": ch.to_string()
+                    }),
+                )
+                .await;
+            }
+            ToolResponse::text("ok")
+        }
+        "browser_key" => {
+            let key = args.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            cdp(
+                state,
+                target,
+                "Input.dispatchKeyEvent",
+                serde_json::json!({
+                    "type": "keyDown",
+                    "key": key
+                }),
+            )
+            .await;
+            cdp(
+                state,
+                target,
+                "Input.dispatchKeyEvent",
+                serde_json::json!({
+                    "type": "keyUp",
+                    "key": key
+                }),
+            )
+            .await
+        }
         _ => ToolResponse::error(format!("unknown tool: {tool}")),
     }
 }
@@ -346,6 +435,44 @@ async fn py(state: &AppState, target: &str, script: &str) -> ToolResponse {
     {
         Ok(out) if out.exit_code == 0 => ToolResponse::text(out.stdout),
         Ok(out) => ToolResponse::error(format!("exit {}: {}", out.exit_code, out.stderr)),
+        Err(e) => ToolResponse::error(e.to_string()),
+    }
+}
+
+async fn cdp(
+    state: &AppState,
+    target: &str,
+    method: &str,
+    params: serde_json::Value,
+) -> ToolResponse {
+    let port = match state.docker.find(target).await {
+        Ok(sandbox) => match sandbox.ports.browserd {
+            Some(p) => p,
+            None => return ToolResponse::error("browserd port not exposed"),
+        },
+        Err(e) => return ToolResponse::error(e.to_string()),
+    };
+
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{port}/cdp");
+    let payload = serde_json::json!({
+        "method": method,
+        "params": params
+    });
+
+    match client.post(&url).json(&payload).send().await {
+        Ok(res) => match res.json::<serde_json::Value>().await {
+            Ok(json) => {
+                if let Some(err) = json.get("error") {
+                    ToolResponse::error(err.to_string())
+                } else {
+                    ToolResponse::text(
+                        serde_json::to_string_pretty(&json).unwrap_or_else(|_| "success".into()),
+                    )
+                }
+            }
+            Err(e) => ToolResponse::error(e.to_string()),
+        },
         Err(e) => ToolResponse::error(e.to_string()),
     }
 }

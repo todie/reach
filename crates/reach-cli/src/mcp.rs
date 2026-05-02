@@ -143,6 +143,16 @@ pub enum ToolCall {
     PageText(PageTextParams),
     #[serde(rename = "auth_handoff")]
     AuthHandoff(AuthHandoffParams),
+    #[serde(rename = "browser_cdp")]
+    BrowserCdp(BrowserCdpParams),
+    #[serde(rename = "browser_js")]
+    BrowserJs(BrowserJsParams),
+    #[serde(rename = "browser_click")]
+    BrowserClick(BrowserClickParams),
+    #[serde(rename = "browser_type")]
+    BrowserType(BrowserTypeParams),
+    #[serde(rename = "browser_key")]
+    BrowserKey(BrowserKeyParams),
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -280,6 +290,44 @@ pub struct AuthHandoffParams {
     pub timeout_seconds: u64,
     #[serde(default)]
     pub use_profile: Option<String>,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserCdpParams {
+    pub method: String,
+    #[serde(default)]
+    pub params: Option<serde_json::Value>,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserJsParams {
+    pub expression: String,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserClickParams {
+    pub x: i32,
+    pub y: i32,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserTypeParams {
+    pub text: String,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserKeyParams {
+    pub key: String,
     #[serde(default)]
     pub sandbox: Option<String>,
 }
@@ -577,6 +625,68 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                         "type": "string",
                         "description": "Persistent Chrome profile name (see `reach create --persist-profile`)"
                     },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "browser_cdp".into(),
+            description: "Send a CDP command directly to the browser".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["method"],
+                "properties": {
+                    "method": { "type": "string", "description": "CDP method name (e.g. 'Runtime.evaluate')" },
+                    "params": { "type": "object", "description": "CDP method parameters" },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "browser_js".into(),
+            description: "Execute JavaScript in the browser via CDP".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["expression"],
+                "properties": {
+                    "expression": { "type": "string", "description": "JavaScript expression to evaluate" },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "browser_click".into(),
+            description: "Click at screen coordinates using CDP".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["x", "y"],
+                "properties": {
+                    "x": { "type": "integer" },
+                    "y": { "type": "integer" },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "browser_type".into(),
+            description: "Type text using CDP".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                    "text": { "type": "string" },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "browser_key".into(),
+            description: "Press a key using CDP".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["key"],
+                "properties": {
+                    "key": { "type": "string" },
                     "sandbox": { "type": "string" }
                 }
             }),

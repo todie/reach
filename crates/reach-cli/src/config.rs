@@ -29,6 +29,8 @@ pub struct SandboxDefaults {
     pub novnc_port: u16,
     /// Default health API port
     pub health_port: u16,
+    /// Default browserd port
+    pub browserd_port: u16,
     /// Root directory for persistent Chrome profiles on the host.
     ///
     /// Each `--persist-profile <name>` is materialised as a subdirectory
@@ -89,6 +91,7 @@ impl Default for SandboxDefaults {
             vnc_port: 5900,
             novnc_port: 6080,
             health_port: 8400,
+            browserd_port: 8401,
             profile_dir: None,
         }
     }
