@@ -280,7 +280,8 @@ fn fingerprint_capture_script(selector: &str) -> String {
 
   const path = (n) => {{
     const segs = [];
-    while (n && n.nodeType === 1 && n !== document.body) {{
+    while (n && n.nodeType === 1) {{
+      if (n === document.documentElement) {{ segs.unshift("html"); break; }}
       const tag = n.tagName.toLowerCase();
       const parent = n.parentElement;
       if (!parent) break;
@@ -288,7 +289,7 @@ fn fingerprint_capture_script(selector: &str) -> String {
       segs.unshift(tag + ":nth-child(" + idx + ")");
       n = parent;
     }}
-    return ["html", "body", ...segs].join(">");
+    return segs.join(">");
   }};
 
   const sibs = (n) => {{
@@ -301,6 +302,8 @@ fn fingerprint_capture_script(selector: &str) -> String {
   const bbox = {{
     x: Math.round(rect.x), y: Math.round(rect.y),
     width: Math.round(rect.width), height: Math.round(rect.height),
+    scroll_x: Math.round(window.scrollX),
+    scroll_y: Math.round(window.scrollY),
   }};
 
   const text = (el.innerText || el.textContent || "").trim().slice(0, 512);

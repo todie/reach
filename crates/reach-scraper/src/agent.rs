@@ -399,14 +399,26 @@ fn build_repair_script(
     if (hit) return hit;
   }}
 
-  // Strategy 3: bbox neighborhood. Pick the element at the stored center.
+  // Strategy 3: bbox neighborhood. Compute the absolute-document center
+  // from the stored viewport coords + scroll offset, scroll the page so
+  // the target lands in the viewport, then probe with elementFromPoint
+  // (which requires viewport-relative coordinates).
   for (const c of candidates) {{
     let bbox;
     try {{ bbox = JSON.parse(c.bbox_json); }} catch (_) {{ continue; }}
     if (!bbox || typeof bbox.x !== "number") continue;
-    const cx = bbox.x + bbox.width / 2;
-    const cy = bbox.y + bbox.height / 2;
-    const probe = document.elementFromPoint(cx, cy);
+    const scrollX = typeof bbox.scroll_x === "number" ? bbox.scroll_x : 0;
+    const scrollY = typeof bbox.scroll_y === "number" ? bbox.scroll_y : 0;
+    const absX = bbox.x + bbox.width / 2 + scrollX;
+    const absY = bbox.y + bbox.height / 2 + scrollY;
+    // Center the target vertically in the current viewport.
+    const targetScrollY = Math.max(0, absY - window.innerHeight / 2);
+    const targetScrollX = Math.max(0, absX - window.innerWidth / 2);
+    window.scrollTo({{ left: targetScrollX, top: targetScrollY, behavior: "instant" }});
+    const vx = absX - window.scrollX;
+    const vy = absY - window.scrollY;
+    if (vx < 0 || vy < 0 || vx > window.innerWidth || vy > window.innerHeight) continue;
+    const probe = document.elementFromPoint(vx, vy);
     const hit = tryCandidate(c, probe, "bbox", probe ? cssPathOf(probe) : "");
     if (hit) return hit;
   }}
@@ -499,6 +511,8 @@ const fingerprintOf = (el) => {
     bbox_json: JSON.stringify({
       x: Math.round(rect.x), y: Math.round(rect.y),
       width: Math.round(rect.width), height: Math.round(rect.height),
+      scroll_x: Math.round(window.scrollX),
+      scroll_y: Math.round(window.scrollY),
     }),
   };
 };
