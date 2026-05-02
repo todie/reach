@@ -339,7 +339,7 @@ fn build_attempt_script(
   const value = extract(el);
   if (value === null) return {{ kind: "err", reason: "could not extract value" }};
   const validated = validate(value);
-  if (validated !== true) return {{ kind: "err", reason: validated }};
+  if (validated !== true) return {{ kind: "err", reason: String(validated) }};
   return {{ kind: "ok", value, fingerprint: fingerprintOf(el) }};
 }})()
 "#,
@@ -464,8 +464,14 @@ const fnv = (s) => {
   return h.toString(16).padStart(8, "0");
 };
 const cssPathOf = (n) => {
+  // Walk to documentElement so elements in <head> (e.g. <title>) get a
+  // valid selector instead of being silently rooted under html>body.
   const segs = [];
-  while (n && n.nodeType === 1 && n !== document.body) {
+  while (n && n.nodeType === 1) {
+    if (n === document.documentElement) {
+      segs.unshift("html");
+      break;
+    }
     const tag = n.tagName.toLowerCase();
     const parent = n.parentElement;
     if (!parent) break;
@@ -473,7 +479,7 @@ const cssPathOf = (n) => {
     segs.unshift(tag + ":nth-child(" + idx + ")");
     n = parent;
   }
-  return ["html", "body", ...segs].join(">");
+  return segs.join(">");
 };
 const fingerprintOf = (el) => {
   const text = (el.innerText || el.textContent || "").trim().slice(0, 512);
@@ -498,9 +504,17 @@ const fingerprintOf = (el) => {
 };
 "#;
 
+/// Serialize `value` as a JavaScript string literal.
+///
+/// Starts from `serde_json::to_string` (which escapes quotes, backslashes,
+/// control chars, and emits valid JSON escapes), then post-processes
+/// `U+2028` / `U+2029`. Those are valid in JSON strings but JavaScript treats
+/// them as line terminators, which would silently break a `format!`-embedded
+/// expression if the input ever contained one.
 fn js_string(value: &str) -> String {
-    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
-    format!("\"{escaped}\"")
+    let json = serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string());
+    json.replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
 }
 
 async fn evaluate_value(cdp: &CdpClient, expression: &str, ctx: &str) -> Result<Value> {
@@ -543,6 +557,20 @@ mod tests {
     fn js_string_escapes_quotes_and_backslashes() {
         assert_eq!(js_string(r#"hello"world"#), r#""hello\"world""#);
         assert_eq!(js_string(r"path\to"), r#""path\\to""#);
+    }
+
+    #[test]
+    fn js_string_escapes_control_chars_and_line_separators() {
+        // serde_json escapes \n and the U+2028 / U+2029 separators that JS
+        // treats as line terminators, so values with them stay valid in a
+        // JS source position.
+        let with_newline = js_string("a\nb");
+        assert!(with_newline.contains("\\n"));
+        assert!(!with_newline.contains('\n'));
+
+        let with_ls = js_string("a\u{2028}b");
+        // U+2028 must not appear unescaped in the output.
+        assert!(!with_ls.contains('\u{2028}'));
     }
 
     #[test]
