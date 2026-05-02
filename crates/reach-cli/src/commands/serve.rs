@@ -442,8 +442,21 @@ async fn dispatch(
                 .get("escalate")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
-            match scraper::run_agent(&state.docker, &state.scraper, target, url, proxy, escalate)
-                .await
+            let stealth = args
+                .get("stealth")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            match scraper::run_agent(
+                &state.docker,
+                &state.scraper,
+                target,
+                url,
+                proxy,
+                escalate,
+                stealth,
+            )
+            .await
             {
                 Ok(out) => json_text(&out),
                 Err(e) => ToolResponse::error(e.to_string()),
@@ -517,6 +530,12 @@ async fn dispatch(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
 
+            let stealth = args
+                .get("stealth")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+
             let request = ResilientRequest {
                 url,
                 selector,
@@ -524,8 +543,27 @@ async fn dispatch(
                 navigate,
                 validate,
             };
-            match scraper::run_resilient(&state.docker, &state.scraper, target, request).await {
+            match scraper::run_resilient(&state.docker, &state.scraper, target, request, stealth)
+                .await
+            {
                 Ok(out) => json_text(&out),
+                Err(e) => ToolResponse::error(e.to_string()),
+            }
+        }
+        "stealth_apply" => {
+            let profile = match args.get("profile").and_then(|v| v.as_str()) {
+                Some(p) if !p.is_empty() => p.to_string(),
+                _ => return ToolResponse::error("stealth_apply: missing required `profile`"),
+            };
+            match scraper::run_stealth_apply(&state.docker, &state.scraper, target, &profile).await
+            {
+                Ok(applied) => json_text(&serde_json::json!({
+                    "applied": applied.id,
+                    "user_agent": applied.user_agent,
+                    "platform": applied.platform,
+                    "timezone": applied.timezone,
+                    "webgl_renderer": applied.webgl_renderer,
+                })),
                 Err(e) => ToolResponse::error(e.to_string()),
             }
         }

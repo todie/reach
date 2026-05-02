@@ -514,3 +514,409 @@ pub struct NetworkGetResponseBodyResult {
     #[serde(rename = "base64Encoded")]
     pub base64_encoded: bool,
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Stealth / fingerprint emulation
+// ──────────────────────────────────────────────────────────────────────
+
+/// `Page.addScriptToEvaluateOnNewDocument` — installs a JS snippet that runs
+/// on every new document **before** any page script. The standard CDP hook for
+/// fingerprint shimming.
+#[derive(Debug, Clone)]
+pub struct PageAddScriptToEvaluateOnNewDocument {
+    params: PageAddScriptToEvaluateOnNewDocumentParams,
+}
+
+impl PageAddScriptToEvaluateOnNewDocument {
+    pub fn new(source: impl Into<String>) -> Self {
+        Self {
+            params: PageAddScriptToEvaluateOnNewDocumentParams {
+                source: source.into(),
+                world_name: None,
+                include_command_line_api: None,
+                run_immediately: None,
+            },
+        }
+    }
+
+    pub fn with_world_name(mut self, world_name: impl Into<String>) -> Self {
+        self.params.world_name = Some(world_name.into());
+        self
+    }
+
+    pub fn with_run_immediately(mut self, run_immediately: bool) -> Self {
+        self.params.run_immediately = Some(run_immediately);
+        self
+    }
+}
+
+impl CdpCommand for PageAddScriptToEvaluateOnNewDocument {
+    type Params = PageAddScriptToEvaluateOnNewDocumentParams;
+
+    fn method(&self) -> &'static str {
+        "Page.addScriptToEvaluateOnNewDocument"
+    }
+
+    fn params(&self) -> &Self::Params {
+        &self.params
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PageAddScriptToEvaluateOnNewDocumentParams {
+    pub source: String,
+    #[serde(rename = "worldName", skip_serializing_if = "Option::is_none")]
+    pub world_name: Option<String>,
+    #[serde(
+        rename = "includeCommandLineAPI",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub include_command_line_api: Option<bool>,
+    #[serde(rename = "runImmediately", skip_serializing_if = "Option::is_none")]
+    pub run_immediately: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PageAddScriptToEvaluateOnNewDocumentResult {
+    pub identifier: String,
+}
+
+/// `Page.enable` — required before `addScriptToEvaluateOnNewDocument` can fire.
+#[derive(Debug, Clone, Default)]
+pub struct PageEnable {
+    params: PageEnableParams,
+}
+
+impl PageEnable {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl CdpCommand for PageEnable {
+    type Params = PageEnableParams;
+    fn method(&self) -> &'static str {
+        "Page.enable"
+    }
+    fn params(&self) -> &Self::Params {
+        &self.params
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct PageEnableParams {}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct PageEnableResult {}
+
+/// `Emulation.setUserAgentOverride` — UA + accept-language + platform +
+/// `userAgentMetadata` (Sec-CH-UA client hints).
+#[derive(Debug, Clone)]
+pub struct EmulationSetUserAgentOverride {
+    params: EmulationSetUserAgentOverrideParams,
+}
+
+impl EmulationSetUserAgentOverride {
+    pub fn new(user_agent: impl Into<String>) -> Self {
+        Self {
+            params: EmulationSetUserAgentOverrideParams {
+                user_agent: user_agent.into(),
+                accept_language: None,
+                platform: None,
+                user_agent_metadata: None,
+            },
+        }
+    }
+
+    pub fn with_accept_language(mut self, lang: impl Into<String>) -> Self {
+        self.params.accept_language = Some(lang.into());
+        self
+    }
+
+    pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
+        self.params.platform = Some(platform.into());
+        self
+    }
+
+    pub fn with_metadata(mut self, metadata: UserAgentMetadata) -> Self {
+        self.params.user_agent_metadata = Some(metadata);
+        self
+    }
+}
+
+impl CdpCommand for EmulationSetUserAgentOverride {
+    type Params = EmulationSetUserAgentOverrideParams;
+    fn method(&self) -> &'static str {
+        "Emulation.setUserAgentOverride"
+    }
+    fn params(&self) -> &Self::Params {
+        &self.params
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EmulationSetUserAgentOverrideParams {
+    #[serde(rename = "userAgent")]
+    pub user_agent: String,
+    #[serde(rename = "acceptLanguage", skip_serializing_if = "Option::is_none")]
+    pub accept_language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    #[serde(rename = "userAgentMetadata", skip_serializing_if = "Option::is_none")]
+    pub user_agent_metadata: Option<UserAgentMetadata>,
+}
+
+/// User-agent client hints (Sec-CH-UA-* headers + `navigator.userAgentData`).
+#[derive(Debug, Clone, Serialize)]
+pub struct UserAgentMetadata {
+    pub brands: Vec<UserAgentBrand>,
+    #[serde(rename = "fullVersionList", skip_serializing_if = "Option::is_none")]
+    pub full_version_list: Option<Vec<UserAgentBrand>>,
+    pub platform: String,
+    #[serde(rename = "platformVersion")]
+    pub platform_version: String,
+    pub architecture: String,
+    pub model: String,
+    pub mobile: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitness: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wow64: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UserAgentBrand {
+    pub brand: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EmulationSetUserAgentOverrideResult {}
+
+/// `Emulation.setHardwareConcurrencyOverride`.
+#[derive(Debug, Clone)]
+pub struct EmulationSetHardwareConcurrencyOverride {
+    params: EmulationSetHardwareConcurrencyOverrideParams,
+}
+
+impl EmulationSetHardwareConcurrencyOverride {
+    pub fn new(hardware_concurrency: u32) -> Self {
+        Self {
+            params: EmulationSetHardwareConcurrencyOverrideParams {
+                hardware_concurrency,
+            },
+        }
+    }
+}
+
+impl CdpCommand for EmulationSetHardwareConcurrencyOverride {
+    type Params = EmulationSetHardwareConcurrencyOverrideParams;
+    fn method(&self) -> &'static str {
+        "Emulation.setHardwareConcurrencyOverride"
+    }
+    fn params(&self) -> &Self::Params {
+        &self.params
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EmulationSetHardwareConcurrencyOverrideParams {
+    #[serde(rename = "hardwareConcurrency")]
+    pub hardware_concurrency: u32,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EmulationSetHardwareConcurrencyOverrideResult {}
+
+/// `Emulation.setLocaleOverride`.
+#[derive(Debug, Clone)]
+pub struct EmulationSetLocaleOverride {
+    params: EmulationSetLocaleOverrideParams,
+}
+
+impl EmulationSetLocaleOverride {
+    pub fn new(locale: impl Into<String>) -> Self {
+        Self {
+            params: EmulationSetLocaleOverrideParams {
+                locale: Some(locale.into()),
+            },
+        }
+    }
+}
+
+impl CdpCommand for EmulationSetLocaleOverride {
+    type Params = EmulationSetLocaleOverrideParams;
+    fn method(&self) -> &'static str {
+        "Emulation.setLocaleOverride"
+    }
+    fn params(&self) -> &Self::Params {
+        &self.params
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EmulationSetLocaleOverrideParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EmulationSetLocaleOverrideResult {}
+
+/// `Emulation.setTimezoneOverride`.
+#[derive(Debug, Clone)]
+pub struct EmulationSetTimezoneOverride {
+    params: EmulationSetTimezoneOverrideParams,
+}
+
+impl EmulationSetTimezoneOverride {
+    pub fn new(timezone_id: impl Into<String>) -> Self {
+        Self {
+            params: EmulationSetTimezoneOverrideParams {
+                timezone_id: timezone_id.into(),
+            },
+        }
+    }
+}
+
+impl CdpCommand for EmulationSetTimezoneOverride {
+    type Params = EmulationSetTimezoneOverrideParams;
+    fn method(&self) -> &'static str {
+        "Emulation.setTimezoneOverride"
+    }
+    fn params(&self) -> &Self::Params {
+        &self.params
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EmulationSetTimezoneOverrideParams {
+    #[serde(rename = "timezoneId")]
+    pub timezone_id: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EmulationSetTimezoneOverrideResult {}
+
+/// `Emulation.setDeviceMetricsOverride`.
+#[derive(Debug, Clone)]
+pub struct EmulationSetDeviceMetricsOverride {
+    params: EmulationSetDeviceMetricsOverrideParams,
+}
+
+impl EmulationSetDeviceMetricsOverride {
+    pub fn new(width: u32, height: u32, device_scale_factor: f32, mobile: bool) -> Self {
+        Self {
+            params: EmulationSetDeviceMetricsOverrideParams {
+                width,
+                height,
+                device_scale_factor,
+                mobile,
+                screen_width: None,
+                screen_height: None,
+            },
+        }
+    }
+
+    pub fn with_screen(mut self, screen_width: u32, screen_height: u32) -> Self {
+        self.params.screen_width = Some(screen_width);
+        self.params.screen_height = Some(screen_height);
+        self
+    }
+}
+
+impl CdpCommand for EmulationSetDeviceMetricsOverride {
+    type Params = EmulationSetDeviceMetricsOverrideParams;
+    fn method(&self) -> &'static str {
+        "Emulation.setDeviceMetricsOverride"
+    }
+    fn params(&self) -> &Self::Params {
+        &self.params
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EmulationSetDeviceMetricsOverrideParams {
+    pub width: u32,
+    pub height: u32,
+    #[serde(rename = "deviceScaleFactor")]
+    pub device_scale_factor: f32,
+    pub mobile: bool,
+    #[serde(rename = "screenWidth", skip_serializing_if = "Option::is_none")]
+    pub screen_width: Option<u32>,
+    #[serde(rename = "screenHeight", skip_serializing_if = "Option::is_none")]
+    pub screen_height: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EmulationSetDeviceMetricsOverrideResult {}
+
+/// `Emulation.setTouchEmulationEnabled`.
+#[derive(Debug, Clone)]
+pub struct EmulationSetTouchEmulationEnabled {
+    params: EmulationSetTouchEmulationEnabledParams,
+}
+
+impl EmulationSetTouchEmulationEnabled {
+    pub fn new(enabled: bool, max_touch_points: Option<u8>) -> Self {
+        Self {
+            params: EmulationSetTouchEmulationEnabledParams {
+                enabled,
+                max_touch_points,
+            },
+        }
+    }
+}
+
+impl CdpCommand for EmulationSetTouchEmulationEnabled {
+    type Params = EmulationSetTouchEmulationEnabledParams;
+    fn method(&self) -> &'static str {
+        "Emulation.setTouchEmulationEnabled"
+    }
+    fn params(&self) -> &Self::Params {
+        &self.params
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EmulationSetTouchEmulationEnabledParams {
+    pub enabled: bool,
+    #[serde(rename = "maxTouchPoints", skip_serializing_if = "Option::is_none")]
+    pub max_touch_points: Option<u8>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EmulationSetTouchEmulationEnabledResult {}
+
+/// `Network.setExtraHTTPHeaders` — used to install Sec-CH-UA-* hints
+/// alongside the UA override.
+#[derive(Debug, Clone)]
+pub struct NetworkSetExtraHttpHeaders {
+    params: NetworkSetExtraHttpHeadersParams,
+}
+
+impl NetworkSetExtraHttpHeaders {
+    pub fn new(headers: Value) -> Self {
+        Self {
+            params: NetworkSetExtraHttpHeadersParams { headers },
+        }
+    }
+}
+
+impl CdpCommand for NetworkSetExtraHttpHeaders {
+    type Params = NetworkSetExtraHttpHeadersParams;
+    fn method(&self) -> &'static str {
+        "Network.setExtraHTTPHeaders"
+    }
+    fn params(&self) -> &Self::Params {
+        &self.params
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NetworkSetExtraHttpHeadersParams {
+    pub headers: Value,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct NetworkSetExtraHttpHeadersResult {}

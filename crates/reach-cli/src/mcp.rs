@@ -163,6 +163,8 @@ pub enum ToolCall {
     ScrapeRecover(ScrapeRecoverParams),
     #[serde(rename = "scrape_resilient")]
     ScrapeResilient(ScrapeResilientParams),
+    #[serde(rename = "stealth_apply")]
+    StealthApply(StealthApplyParams),
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -372,6 +374,10 @@ pub struct ScrapeAgentParams {
     pub proxy: Option<ScrapeProxyParams>,
     #[serde(default = "default_true")]
     pub escalate: bool,
+    /// Optional stealth profile id to apply before navigation
+    /// (e.g. `"windows-chrome-128"`).
+    #[serde(default)]
+    pub stealth: Option<String>,
     #[serde(default)]
     pub sandbox: Option<String>,
 }
@@ -405,6 +411,18 @@ pub struct ScrapeResilientParams {
     pub navigate: bool,
     #[serde(default)]
     pub validate: serde_json::Value,
+    /// Optional stealth profile id to apply before navigation.
+    #[serde(default)]
+    pub stealth: Option<String>,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StealthApplyParams {
+    /// Built-in profile id (`windows-chrome-128`, `mac-chrome-128`,
+    /// `linux-chrome-128`).
+    pub profile: String,
     #[serde(default)]
     pub sandbox: Option<String>,
 }
@@ -787,8 +805,8 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
             name: "scrape_agent".into(),
             description: "Hybrid fetch: static HTTP first, escalate to CDP browser \
                 on 403/429 and forward solved cookies back to the static client. \
-                `proxy` is parsed but ignored on the CDP path until per-request \
-                contexts ship."
+                Optionally applies a stealth profile to the CDP target before \
+                escalation."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -797,6 +815,8 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                     "url": { "type": "string" },
                     "proxy": SCRAPE_PROXY_SCHEMA.clone(),
                     "escalate": { "type": "boolean", "default": true },
+                    "stealth": { "type": "string",
+                        "description": "Built-in profile id (windows-chrome-128, mac-chrome-128, linux-chrome-128)" },
                     "sandbox": { "type": "string" }
                 }
             }),
@@ -878,6 +898,27 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                                 "description": "JS-flavored regex applied to the value" }
                         }
                     },
+                    "stealth": { "type": "string",
+                        "description": "Built-in profile id; applied before navigation" },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "stealth_apply".into(),
+            description: "Apply a built-in browser fingerprint profile to the \
+                sandbox: UA + sec-ch-ua hints, hardware concurrency, locale, \
+                timezone, screen / device metrics, plus a Page.addScriptToEvaluate \
+                shim that normalizes navigator.webdriver, plugins/mimeTypes, \
+                permissions.query, WebGL VENDOR/RENDERER, screen.*, \
+                navigator.deviceMemory, and window.chrome.runtime."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["profile"],
+                "properties": {
+                    "profile": { "type": "string",
+                        "enum": ["windows-chrome-128", "mac-chrome-128", "linux-chrome-128"] },
                     "sandbox": { "type": "string" }
                 }
             }),

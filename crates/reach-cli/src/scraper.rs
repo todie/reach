@@ -13,9 +13,9 @@ use reach_cdp::{
     commands::{PageNavigate, PageNavigateResult, RuntimeEvaluate, RuntimeEvaluateResult},
 };
 use reach_scraper::{
-    AdaptiveMemory, CdpFetcher, ElementFingerprint, ExtractMode, HybridFetcher, ProxyConfig,
-    ResilientOutcome, ResilientRequest, ScrapeOutput, StaticFetcher, ValidateOptions,
-    resilient_extract, url_components,
+    AdaptiveMemory, CdpFetcher, ElementFingerprint, ExtractMode, FingerprintProfile, HybridFetcher,
+    ProxyConfig, ResilientOutcome, ResilientRequest, ScrapeOutput, StaticFetcher, ValidateOptions,
+    apply_profile, resilient_extract, url_components,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -88,7 +88,8 @@ pub async fn run_static(url: String, proxy: Option<ScrapeProxyParams>) -> Result
 }
 
 /// Run the hybrid fetch path for `sandbox`. Static-first, escalates to CDP on
-/// 403/429.
+/// 403/429. When `stealth` is set, the CDP target gets the named fingerprint
+/// profile applied before any escalation navigation.
 pub async fn run_agent(
     docker: &DockerClient,
     state: &ScraperState,
@@ -96,6 +97,7 @@ pub async fn run_agent(
     url: String,
     proxy: Option<ScrapeProxyParams>,
     escalate: bool,
+    stealth: Option<String>,
 ) -> Result<ScrapeOutput> {
     let static_fetcher = StaticFetcher::new(proxy_from(proxy.as_ref()))?;
 
@@ -105,9 +107,41 @@ pub async fn run_agent(
 
     let cdp = cdp_client_for(docker, sandbox).await?;
     let _guard = state.cdp_lock.lock().await;
+
+    if let Some(profile_id) = stealth.as_deref() {
+        apply_named_profile(&cdp, profile_id).await?;
+    }
+
     let cdp_fetcher = CdpFetcher::new(&cdp);
     let hybrid = HybridFetcher::new(static_fetcher, cdp_fetcher);
     hybrid.fetch(url).await
+}
+
+/// Apply a built-in stealth profile to the sandbox's CDP target.
+pub async fn run_stealth_apply(
+    docker: &DockerClient,
+    state: &ScraperState,
+    sandbox: &str,
+    profile_id: &str,
+) -> Result<FingerprintProfile> {
+    let cdp = cdp_client_for(docker, sandbox).await?;
+    let _guard = state.cdp_lock.lock().await;
+    let profile = apply_named_profile(&cdp, profile_id).await?;
+    Ok(profile)
+}
+
+async fn apply_named_profile(
+    cdp: &reach_cdp::CdpClient,
+    profile_id: &str,
+) -> Result<FingerprintProfile> {
+    let profile = FingerprintProfile::by_id(profile_id).ok_or_else(|| {
+        anyhow!(
+            "unknown stealth profile `{profile_id}`. Available: {}",
+            FingerprintProfile::builtin_ids().join(", ")
+        )
+    })?;
+    apply_profile(cdp, &profile).await?;
+    Ok(profile)
 }
 
 /// Capture an element fingerprint via CDP and persist it.
@@ -164,15 +198,20 @@ pub async fn run_learn(
     })
 }
 
-/// Run the full Observe → … → Repair loop and persist learnings.
+/// Run the full Observe → … → Repair loop and persist learnings. When
+/// `stealth` is set, the named profile is applied before the loop runs.
 pub async fn run_resilient(
     docker: &DockerClient,
     state: &ScraperState,
     sandbox: &str,
     request: ResilientRequest,
+    stealth: Option<String>,
 ) -> Result<ResilientOutcome> {
     let cdp = cdp_client_for(docker, sandbox).await?;
     let _guard = state.cdp_lock.lock().await;
+    if let Some(profile_id) = stealth.as_deref() {
+        apply_named_profile(&cdp, profile_id).await?;
+    }
     resilient_extract(&cdp, &state.memory, &request).await
 }
 

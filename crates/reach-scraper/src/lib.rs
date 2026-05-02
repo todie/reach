@@ -20,6 +20,8 @@ pub mod cdp_fetcher;
 pub mod hybrid_fetcher;
 /// Static HTTP fetcher with cookie and proxy support.
 pub mod static_fetcher;
+/// Browser fingerprint spoofing presets and the CDP+JS shim driver.
+pub mod stealth;
 pub use adaptive::{
     AdaptiveMemory, ElementFingerprint, ElementFingerprintCandidate, SCHEMA_VERSION, url_components,
 };
@@ -30,6 +32,10 @@ pub use agent::{
 pub use cdp_fetcher::CdpFetcher;
 pub use hybrid_fetcher::HybridFetcher;
 pub use static_fetcher::StaticFetcher;
+pub use stealth::{
+    FingerprintProfile, apply_profile, profile_linux_chrome, profile_mac_chrome,
+    profile_windows_chrome,
+};
 
 /// High-level scraper facade for Reach.
 #[derive(Debug, Clone)]
