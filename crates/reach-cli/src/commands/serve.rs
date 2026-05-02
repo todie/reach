@@ -3,12 +3,15 @@ use axum::response::sse::{Event, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::Args;
+use reach_cli::config::ReachConfig;
 use reach_cli::docker::{
     AuthHandoffOptions, DockerClient, PageTextOptions, ProfileMount, novnc_url,
 };
 use reach_cli::mcp::{
-    JsonRpcRequest, JsonRpcResponse, McpInitializeResult, ToolResponse, tool_definitions,
+    JsonRpcRequest, JsonRpcResponse, McpInitializeResult, ScrapeProxyParams, ToolResponse,
+    tool_definitions,
 };
+use reach_cli::scraper::{self, ScraperState};
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -30,15 +33,25 @@ pub struct ServeArgs {
 struct AppState {
     docker: DockerClient,
     default_sandbox: Option<String>,
+    scraper: ScraperState,
 }
 
 pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     let port = args.port;
     let host = args.host.clone();
 
+    let config = ReachConfig::load();
+    let memory_path = config.scraper.resolved_memory_path();
+    let scraper = ScraperState::open(&memory_path)?;
+    println!(
+        "reach scraper memory: {} (override via [scraper] memory_path)",
+        memory_path.display()
+    );
+
     let state = Arc::new(AppState {
         docker: DockerClient::new()?,
         default_sandbox: args.sandbox,
+        scraper,
     });
 
     let app = Router::new()
@@ -407,7 +420,92 @@ async fn dispatch(
             )
             .await
         }
+        "scrape_static" => {
+            let url = match args.get("url").and_then(|v| v.as_str()) {
+                Some(u) if !u.is_empty() => u.to_string(),
+                _ => return ToolResponse::error("scrape_static: missing required `url`"),
+            };
+            let proxy = parse_proxy(args.get("proxy"));
+            match scraper::run_static(url, proxy).await {
+                Ok(out) => json_text(&out),
+                Err(e) => ToolResponse::error(e.to_string()),
+            }
+        }
+        "scrape_agent" => {
+            let url = match args.get("url").and_then(|v| v.as_str()) {
+                Some(u) if !u.is_empty() => u.to_string(),
+                _ => return ToolResponse::error("scrape_agent: missing required `url`"),
+            };
+            let proxy = parse_proxy(args.get("proxy"));
+            let escalate = args
+                .get("escalate")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            match scraper::run_agent(&state.docker, &state.scraper, target, url, proxy, escalate)
+                .await
+            {
+                Ok(out) => json_text(&out),
+                Err(e) => ToolResponse::error(e.to_string()),
+            }
+        }
+        "scrape_learn" => {
+            let url = match args.get("url").and_then(|v| v.as_str()) {
+                Some(u) if !u.is_empty() => u.to_string(),
+                _ => return ToolResponse::error("scrape_learn: missing required `url`"),
+            };
+            let selector = match args.get("selector").and_then(|v| v.as_str()) {
+                Some(s) if !s.is_empty() => s.to_string(),
+                _ => return ToolResponse::error("scrape_learn: missing required `selector`"),
+            };
+            let navigate = args
+                .get("navigate")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            match scraper::run_learn(
+                &state.docker,
+                &state.scraper,
+                target,
+                url,
+                selector,
+                navigate,
+            )
+            .await
+            {
+                Ok(out) => json_text(&out),
+                Err(e) => ToolResponse::error(e.to_string()),
+            }
+        }
+        "scrape_recover" => {
+            let url = match args.get("url").and_then(|v| v.as_str()) {
+                Some(u) if !u.is_empty() => u.to_string(),
+                _ => return ToolResponse::error("scrape_recover: missing required `url`"),
+            };
+            let selector_filter = args
+                .get("selector")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            match scraper::run_recover(&state.scraper, url, selector_filter).await {
+                Ok(out) => json_text(&out),
+                Err(e) => ToolResponse::error(e.to_string()),
+            }
+        }
         _ => ToolResponse::error(format!("unknown tool: {tool}")),
+    }
+}
+
+fn parse_proxy(value: Option<&serde_json::Value>) -> Option<ScrapeProxyParams> {
+    let v = value?;
+    if v.is_null() {
+        return None;
+    }
+    serde_json::from_value(v.clone()).ok()
+}
+
+fn json_text<T: serde::Serialize>(value: &T) -> ToolResponse {
+    match serde_json::to_string_pretty(value) {
+        Ok(s) => ToolResponse::text(s),
+        Err(e) => ToolResponse::error(e.to_string()),
     }
 }
 

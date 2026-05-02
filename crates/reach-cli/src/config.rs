@@ -12,6 +12,40 @@ pub struct ReachConfig {
     pub sandbox: SandboxDefaults,
     pub server: ServerConfig,
     pub docker: DockerConfig,
+    pub scraper: ScraperConfig,
+}
+
+/// Configuration for the host-side scraper integration (`reach-scraper`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ScraperConfig {
+    /// Override path for the AdaptiveMemory SQLite database.
+    ///
+    /// `None` means use the platform default, which today is
+    /// `$XDG_DATA_HOME/reach/adaptive.sqlite` (or
+    /// `~/.local/share/reach/adaptive.sqlite`).
+    #[serde(default)]
+    pub memory_path: Option<PathBuf>,
+}
+
+impl ScraperConfig {
+    /// Resolve the path used for the AdaptiveMemory SQLite database.
+    pub fn resolved_memory_path(&self) -> PathBuf {
+        self.memory_path
+            .clone()
+            .unwrap_or_else(default_adaptive_memory_path)
+    }
+}
+
+/// Platform default for the AdaptiveMemory SQLite database path.
+pub fn default_adaptive_memory_path() -> PathBuf {
+    let base = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            PathBuf::from(home).join(".local").join("share")
+        });
+    base.join("reach").join("adaptive.sqlite")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,5 +197,24 @@ mod tests {
     fn default_profile_dir_contains_reach_segment() {
         let dir = default_profile_dir();
         assert!(dir.to_string_lossy().contains("reach"));
+    }
+
+    #[test]
+    fn resolved_memory_path_uses_explicit_override() {
+        let cfg = ScraperConfig {
+            memory_path: Some(PathBuf::from("/tmp/custom/adaptive.sqlite")),
+        };
+        assert_eq!(
+            cfg.resolved_memory_path(),
+            PathBuf::from("/tmp/custom/adaptive.sqlite")
+        );
+    }
+
+    #[test]
+    fn default_memory_path_lives_under_reach_share() {
+        let path = default_adaptive_memory_path();
+        let s = path.to_string_lossy();
+        assert!(s.ends_with("adaptive.sqlite"));
+        assert!(s.contains("reach"));
     }
 }

@@ -18,7 +18,9 @@ pub mod cdp_fetcher;
 pub mod hybrid_fetcher;
 /// Static HTTP fetcher with cookie and proxy support.
 pub mod static_fetcher;
-pub use adaptive::{AdaptiveMemory, ElementFingerprint, ElementFingerprintCandidate};
+pub use adaptive::{
+    AdaptiveMemory, ElementFingerprint, ElementFingerprintCandidate, SCHEMA_VERSION, url_components,
+};
 pub use cdp_fetcher::CdpFetcher;
 pub use hybrid_fetcher::HybridFetcher;
 pub use static_fetcher::StaticFetcher;

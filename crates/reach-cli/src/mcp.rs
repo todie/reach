@@ -153,6 +153,14 @@ pub enum ToolCall {
     BrowserType(BrowserTypeParams),
     #[serde(rename = "browser_key")]
     BrowserKey(BrowserKeyParams),
+    #[serde(rename = "scrape_static")]
+    ScrapeStatic(ScrapeStaticParams),
+    #[serde(rename = "scrape_agent")]
+    ScrapeAgent(ScrapeAgentParams),
+    #[serde(rename = "scrape_learn")]
+    ScrapeLearn(ScrapeLearnParams),
+    #[serde(rename = "scrape_recover")]
+    ScrapeRecover(ScrapeRecoverParams),
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -328,6 +336,59 @@ pub struct BrowserTypeParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserKeyParams {
     pub key: String,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+/// Proxy override accepted by `scrape_*` tools.
+///
+/// Used today only by [`ScrapeStaticParams`]. The CDP-backed paths accept the
+/// same shape but the proxy is currently ignored (Step 3 lights it up via
+/// `Target.createBrowserContext`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapeProxyParams {
+    pub url: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapeStaticParams {
+    pub url: String,
+    #[serde(default)]
+    pub proxy: Option<ScrapeProxyParams>,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapeAgentParams {
+    pub url: String,
+    #[serde(default)]
+    pub proxy: Option<ScrapeProxyParams>,
+    #[serde(default = "default_true")]
+    pub escalate: bool,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapeLearnParams {
+    pub url: String,
+    pub selector: String,
+    #[serde(default = "default_true")]
+    pub navigate: bool,
+    #[serde(default)]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapeRecoverParams {
+    pub url: String,
+    #[serde(default)]
+    pub selector: Option<String>,
     #[serde(default)]
     pub sandbox: Option<String>,
 }
@@ -691,8 +752,90 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                 }
             }),
         },
+        ToolDefinition {
+            name: "scrape_static".into(),
+            description: "Fetch a URL with the static HTTP scraper (no browser). \
+                Returns rendered HTML and metadata. Optional proxy is honored."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": { "type": "string" },
+                    "proxy": SCRAPE_PROXY_SCHEMA.clone(),
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "scrape_agent".into(),
+            description: "Hybrid fetch: static HTTP first, escalate to CDP browser \
+                on 403/429 and forward solved cookies back to the static client. \
+                `proxy` is parsed but ignored on the CDP path until per-request \
+                contexts ship."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": { "type": "string" },
+                    "proxy": SCRAPE_PROXY_SCHEMA.clone(),
+                    "escalate": { "type": "boolean", "default": true },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "scrape_learn".into(),
+            description: "Capture an element fingerprint (DOM path, text hash, \
+                bbox) for a CSS selector via CDP and persist it to the host's \
+                AdaptiveMemory store for later self-healing recovery."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["url", "selector"],
+                "properties": {
+                    "url": { "type": "string" },
+                    "selector": { "type": "string" },
+                    "navigate": { "type": "boolean", "default": true,
+                        "description": "Navigate to `url` first; set false if the \
+                            page is already loaded in the sandbox." },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "scrape_recover".into(),
+            description: "Look up AdaptiveMemory candidates for a URL (by domain + \
+                path). Optionally filter by original selector. Returns a ranked \
+                list; the actual repair attempt lives in `scrape_resilient` \
+                (Step 2)."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": { "type": "string" },
+                    "selector": { "type": "string" },
+                    "sandbox": { "type": "string" }
+                }
+            }),
+        },
     ]
 }
+
+static SCRAPE_PROXY_SCHEMA: std::sync::LazyLock<serde_json::Value> =
+    std::sync::LazyLock::new(|| {
+        serde_json::json!({
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+                "url": { "type": "string", "description": "Proxy URL, e.g. http://host:port" },
+                "username": { "type": "string" },
+                "password": { "type": "string" }
+            }
+        })
+    });
 
 #[cfg(test)]
 mod tests {
