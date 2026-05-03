@@ -29,6 +29,13 @@ pub struct ServeArgs {
     /// Target sandbox (default: first running)
     #[arg(long)]
     pub sandbox: Option<String>,
+
+    /// Apply this stealth profile to the sandbox on startup so every
+    /// subsequent CDP-touching tool inherits it without per-call opt-in.
+    /// Built-ins: `windows-chrome-128`, `mac-chrome-128`,
+    /// `linux-chrome-128`. Use `auto` for `windows-chrome-128`.
+    #[arg(long)]
+    pub stealth: Option<String>,
 }
 
 struct AppState {
@@ -54,6 +61,26 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         default_sandbox: args.sandbox,
         scraper,
     });
+
+    if let Some(raw) = args.stealth.as_deref() {
+        let profile_id = if raw.eq_ignore_ascii_case("auto") {
+            "windows-chrome-128"
+        } else {
+            raw
+        };
+        let target = resolve_sandbox(&state, None)
+            .await
+            .map_err(|e| anyhow::anyhow!("--stealth requires a resolvable sandbox: {e}"))?;
+        match scraper::run_stealth_apply(&state.docker, &state.scraper, &target, profile_id).await {
+            Ok(profile) => println!(
+                "stealth profile `{}` applied to sandbox `{target}` at startup",
+                profile.id
+            ),
+            Err(e) => {
+                eprintln!("warning: failed to apply --stealth `{profile_id}`: {e}");
+            }
+        }
+    }
 
     let app = Router::new()
         .route("/mcp", post(mcp_handler))
