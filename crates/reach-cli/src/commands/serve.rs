@@ -36,6 +36,12 @@ pub struct ServeArgs {
     /// `linux-chrome-128`. Use `auto` for `windows-chrome-128`.
     #[arg(long)]
     pub stealth: Option<String>,
+
+    /// Default proxy URL applied to every `scrape_*` call when the call
+    /// doesn't specify its own proxy. Format: `http://[user:pass@]host:port`
+    /// or `socks5://host:port`. Per-call `proxy` arguments override.
+    #[arg(long)]
+    pub proxy: Option<String>,
 }
 
 struct AppState {
@@ -50,11 +56,20 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
 
     let config = ReachConfig::load();
     let memory_path = config.scraper.resolved_memory_path();
-    let scraper = ScraperState::open(&memory_path)?;
+    let mut scraper = ScraperState::open(&memory_path)?;
     println!(
         "reach scraper memory: {} (override via [scraper] memory_path)",
         memory_path.display()
     );
+
+    if let Some(raw_proxy) = args.proxy.as_deref() {
+        let proxy = scraper::parse_proxy_url(raw_proxy)?;
+        println!(
+            "default scrape proxy: {} (override per-call via `proxy` arg)",
+            proxy.url
+        );
+        scraper = scraper.with_default_proxy(Some(proxy));
+    }
 
     let state = Arc::new(AppState {
         docker: DockerClient::new()?,
@@ -454,7 +469,7 @@ async fn dispatch(
                 _ => return ToolResponse::error("scrape_static: missing required `url`"),
             };
             let proxy = parse_proxy(args.get("proxy"));
-            match scraper::run_static(url, proxy).await {
+            match scraper::run_static(&state.scraper, url, proxy).await {
                 Ok(out) => json_text(&out),
                 Err(e) => ToolResponse::error(e.to_string()),
             }
@@ -562,6 +577,7 @@ async fn dispatch(
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .map(str::to_string);
+            let proxy = parse_proxy(args.get("proxy"));
 
             let request = ResilientRequest {
                 url,
@@ -570,8 +586,15 @@ async fn dispatch(
                 navigate,
                 validate,
             };
-            match scraper::run_resilient(&state.docker, &state.scraper, target, request, stealth)
-                .await
+            match scraper::run_resilient(
+                &state.docker,
+                &state.scraper,
+                target,
+                request,
+                stealth,
+                proxy,
+            )
+            .await
             {
                 Ok(out) => json_text(&out),
                 Err(e) => ToolResponse::error(e.to_string()),

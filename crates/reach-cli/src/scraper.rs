@@ -31,6 +31,10 @@ pub struct ScraperState {
     /// Coarse lock that serializes CDP scraper operations until per-request
     /// browser contexts ship. Step 3 removes this.
     pub cdp_lock: Arc<Mutex<()>>,
+    /// Default proxy applied to every scrape when the call doesn't specify
+    /// one. Wired from `reach serve --proxy ...` so agents don't need to
+    /// pass a proxy on every tool call.
+    pub default_proxy: Option<ProxyConfig>,
 }
 
 impl ScraperState {
@@ -45,7 +49,14 @@ impl ScraperState {
         Ok(Self {
             memory: Arc::new(Mutex::new(memory)),
             cdp_lock: Arc::new(Mutex::new(())),
+            default_proxy: None,
         })
+    }
+
+    /// Set the default proxy applied when a scrape call omits one.
+    pub fn with_default_proxy(mut self, proxy: Option<ProxyConfig>) -> Self {
+        self.default_proxy = proxy;
+        self
     }
 }
 
@@ -81,9 +92,45 @@ fn proxy_from(params: Option<&ScrapeProxyParams>) -> Option<ProxyConfig> {
     }
 }
 
+/// Pick the per-call proxy when set; otherwise fall back to the server-level
+/// default. Returns `None` only when both are absent.
+fn resolve_proxy(
+    state: &ScraperState,
+    per_call: Option<&ScrapeProxyParams>,
+) -> Option<ProxyConfig> {
+    proxy_from(per_call).or_else(|| state.default_proxy.clone())
+}
+
+/// Parse an `http[s]://[user:pass@]host:port` string into a `ProxyConfig`.
+///
+/// User and password are taken raw (no percent decoding) — keep them plain in
+/// the source string. For credentials with special characters, use the
+/// per-call `proxy` JSON object instead.
+pub fn parse_proxy_url(raw: &str) -> Result<ProxyConfig> {
+    let parsed = reqwest::Url::parse(raw).with_context(|| format!("invalid proxy URL `{raw}`"))?;
+    let username = if parsed.username().is_empty() {
+        None
+    } else {
+        Some(parsed.username().to_string())
+    };
+    let password = parsed.password().map(str::to_string);
+    let mut sanitized = parsed.clone();
+    sanitized.set_username("").ok();
+    sanitized.set_password(None).ok();
+    Ok(ProxyConfig {
+        url: sanitized.as_str().trim_end_matches('/').to_string(),
+        username,
+        password,
+    })
+}
+
 /// Run a one-shot static HTTP fetch. The CDP client is unused.
-pub async fn run_static(url: String, proxy: Option<ScrapeProxyParams>) -> Result<ScrapeOutput> {
-    let fetcher = StaticFetcher::new(proxy_from(proxy.as_ref()))?;
+pub async fn run_static(
+    state: &ScraperState,
+    url: String,
+    proxy: Option<ScrapeProxyParams>,
+) -> Result<ScrapeOutput> {
+    let fetcher = StaticFetcher::new(resolve_proxy(state, proxy.as_ref()))?;
     fetcher.fetch(url).await
 }
 
@@ -99,7 +146,8 @@ pub async fn run_agent(
     escalate: bool,
     stealth: Option<String>,
 ) -> Result<ScrapeOutput> {
-    let static_fetcher = StaticFetcher::new(proxy_from(proxy.as_ref()))?;
+    let resolved_proxy = resolve_proxy(state, proxy.as_ref());
+    let static_fetcher = StaticFetcher::new(resolved_proxy.clone())?;
 
     if !escalate {
         return static_fetcher.fetch(url).await;
@@ -198,21 +246,55 @@ pub async fn run_learn(
     })
 }
 
-/// Run the full Observe → … → Repair loop and persist learnings. When
-/// `stealth` is set, the named profile is applied before the loop runs.
+/// Run the full Observe → … → Repair loop and persist learnings.
+///
+/// When `proxy` (or the server-level default) is set, the loop runs against a
+/// freshly minted browser context with that proxy, so the page never sees the
+/// host's IP. Stealth, when requested, is applied to whichever session the
+/// loop is actually driving (the proxied context, or the default session).
 pub async fn run_resilient(
     docker: &DockerClient,
     state: &ScraperState,
     sandbox: &str,
     request: ResilientRequest,
     stealth: Option<String>,
+    proxy: Option<ScrapeProxyParams>,
 ) -> Result<ResilientOutcome> {
     let cdp = cdp_client_for(docker, sandbox).await?;
+    let resolved_proxy = resolve_proxy(state, proxy.as_ref());
     let _guard = state.cdp_lock.lock().await;
-    if let Some(profile_id) = stealth.as_deref() {
-        apply_named_profile(&cdp, profile_id).await?;
+
+    if let Some(proxy) = resolved_proxy {
+        if proxy.username.is_some() || proxy.password.is_some() {
+            anyhow::bail!(
+                "authenticated proxies are not yet supported on the CDP path \
+                 ({}). Use IP auth or wait for Fetch.authRequired support.",
+                proxy.url
+            );
+        }
+        let context = cdp
+            .create_context(reach_cdp::NewContext {
+                proxy_server: Some(proxy.url.clone()),
+                proxy_bypass_list: None,
+                url: None,
+            })
+            .await
+            .context("creating proxied browser context for resilient extract")?;
+        let scoped = cdp.with_session(context.session_id());
+        if let Some(profile_id) = stealth.as_deref() {
+            apply_named_profile(&scoped, profile_id).await?;
+        }
+        let outcome = resilient_extract(&scoped, &state.memory, &request).await;
+        if let Err(e) = context.close().await {
+            tracing::warn!(error = %e, "failed to dispose proxied browser context");
+        }
+        outcome
+    } else {
+        if let Some(profile_id) = stealth.as_deref() {
+            apply_named_profile(&cdp, profile_id).await?;
+        }
+        resilient_extract(&cdp, &state.memory, &request).await
     }
-    resilient_extract(&cdp, &state.memory, &request).await
 }
 
 /// Parse the loose JSON shape accepted on the MCP wire into a typed

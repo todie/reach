@@ -414,6 +414,9 @@ pub struct ScrapeResilientParams {
     /// Optional stealth profile id to apply before navigation.
     #[serde(default)]
     pub stealth: Option<String>,
+    /// Optional per-call proxy override. Mints a fresh CDP browser context.
+    #[serde(default)]
+    pub proxy: Option<ScrapeProxyParams>,
     #[serde(default)]
     pub sandbox: Option<String>,
 }
