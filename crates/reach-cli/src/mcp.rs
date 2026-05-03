@@ -165,6 +165,8 @@ pub enum ToolCall {
     ScrapeResilient(ScrapeResilientParams),
     #[serde(rename = "stealth_apply")]
     StealthApply(StealthApplyParams),
+    #[serde(rename = "scrape_search")]
+    ScrapeSearch(ScrapeSearchParams),
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -428,6 +430,27 @@ pub struct StealthApplyParams {
     pub profile: String,
     #[serde(default)]
     pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapeSearchParams {
+    pub query: String,
+    /// Backend id. `ddg` is the only one wired today.
+    #[serde(default = "default_search_engine")]
+    pub engine: String,
+    #[serde(default = "default_max_results")]
+    pub max_results: usize,
+    /// Per-call proxy override; falls back to the server-level default.
+    #[serde(default)]
+    pub proxy: Option<ScrapeProxyParams>,
+}
+
+fn default_search_engine() -> String {
+    "ddg".into()
+}
+
+fn default_max_results() -> usize {
+    10
 }
 
 fn default_true() -> bool {
@@ -923,6 +946,25 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                     "profile": { "type": "string",
                         "enum": ["windows-chrome-128", "mac-chrome-128", "linux-chrome-128"] },
                     "sandbox": { "type": "string" }
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "scrape_search".into(),
+            description: "Free no-captcha web search via DuckDuckGo HTML. \
+                Hits the static fetcher (no browser), parses the static HTML, \
+                returns [{title, url, snippet}]. Use this instead of \
+                Google/Bing scraping for general web search — DDG HTML has \
+                no JS challenge, no captcha, and tolerates ~10 req/s per IP."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": { "type": "string" },
+                    "engine": { "type": "string", "enum": ["ddg"], "default": "ddg" },
+                    "max_results": { "type": "integer", "default": 10, "minimum": 1, "maximum": 50 },
+                    "proxy": SCRAPE_PROXY_SCHEMA.clone()
                 }
             }),
         },

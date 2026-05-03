@@ -14,8 +14,8 @@ use reach_cdp::{
 };
 use reach_scraper::{
     AdaptiveMemory, CdpFetcher, ElementFingerprint, ExtractMode, FingerprintProfile, HybridFetcher,
-    ProxyConfig, ResilientOutcome, ResilientRequest, ScrapeOutput, StaticFetcher, ValidateOptions,
-    apply_profile, resilient_extract, url_components,
+    ProxyConfig, ResilientOutcome, ResilientRequest, ScrapeOutput, SearchResult, StaticFetcher,
+    ValidateOptions, apply_profile, ddg_html_search, resilient_extract, url_components,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -132,6 +132,41 @@ pub async fn run_static(
 ) -> Result<ScrapeOutput> {
     let fetcher = StaticFetcher::new(resolve_proxy(state, proxy.as_ref()))?;
     fetcher.fetch(url).await
+}
+
+/// Free no-captcha search via DuckDuckGo HTML. Static-fetcher only.
+///
+/// Unlike the other scrape_* helpers this DOES NOT inherit the server-level
+/// `--proxy` default. DDG rate-limits and anomaly-flags shared residential
+/// pools (Webshare etc.) — pretty much every common cheap proxy IP is
+/// already burned with DDG. A clean direct egress works much better. Pass
+/// `proxy` explicitly per-call when you actually need one.
+pub async fn run_search(
+    _state: &ScraperState,
+    query: String,
+    engine: String,
+    max_results: usize,
+    proxy: Option<ScrapeProxyParams>,
+) -> Result<SearchOutput> {
+    let fetcher = StaticFetcher::new(proxy_from(proxy.as_ref()))?;
+    let results = match engine.as_str() {
+        "ddg" | "duckduckgo" | "" => ddg_html_search(&fetcher, &query, max_results).await?,
+        other => bail!("unknown search engine `{other}` (supported: `ddg`)"),
+    };
+    Ok(SearchOutput {
+        engine: "ddg".to_string(),
+        query,
+        count: results.len(),
+        results,
+    })
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct SearchOutput {
+    pub engine: String,
+    pub query: String,
+    pub count: usize,
+    pub results: Vec<SearchResult>,
 }
 
 /// Run the hybrid fetch path for `sandbox`. Static-first, escalates to CDP on

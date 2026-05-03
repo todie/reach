@@ -600,6 +600,26 @@ async fn dispatch(
                 Err(e) => ToolResponse::error(e.to_string()),
             }
         }
+        "scrape_search" => {
+            let query = match args.get("query").and_then(|v| v.as_str()) {
+                Some(q) if !q.is_empty() => q.to_string(),
+                _ => return ToolResponse::error("scrape_search: missing required `query`"),
+            };
+            let engine = args
+                .get("engine")
+                .and_then(|v| v.as_str())
+                .unwrap_or("ddg")
+                .to_string();
+            let max_results = args
+                .get("max_results")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10) as usize;
+            let proxy = parse_proxy(args.get("proxy"));
+            match scraper::run_search(&state.scraper, query, engine, max_results, proxy).await {
+                Ok(out) => json_text(&out),
+                Err(e) => ToolResponse::error(e.to_string()),
+            }
+        }
         "stealth_apply" => {
             let profile = match args.get("profile").and_then(|v| v.as_str()) {
                 Some(p) if !p.is_empty() => p.to_string(),

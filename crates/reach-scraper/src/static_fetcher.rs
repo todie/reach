@@ -82,6 +82,46 @@ impl StaticFetcher {
         })
     }
 
+    /// POST a `application/x-www-form-urlencoded` body and return the response.
+    /// Used by search backends like DDG HTML that serve full results only on POST.
+    /// `extra_headers` lets callers attach `Referer`, `Origin`, etc. that some
+    /// backends require to disambiguate from automated traffic.
+    pub async fn post_form<T: serde::Serialize + ?Sized>(
+        &self,
+        url: impl Into<String>,
+        form: &T,
+        extra_headers: &[(&str, &str)],
+    ) -> Result<ScrapeOutput> {
+        let url = url.into();
+        debug!(url = %url, uses_proxy = self.proxy.is_some(), "starting static POST");
+        let mut req = self.client.post(&url).form(form);
+        for (k, v) in extra_headers {
+            req = req.header(*k, *v);
+        }
+        let response = req
+            .send()
+            .await
+            .with_context(|| format!("failed to POST {url} via static client"))?;
+
+        let status_code = response.status().as_u16();
+        let final_url = response.url().to_string();
+        let content = response
+            .text()
+            .await
+            .with_context(|| format!("failed to read POST response body for {url}"))?;
+        debug!(url = %url, final_url = %final_url, status_code, "completed static POST");
+
+        Ok(ScrapeOutput {
+            url,
+            content: Some(content),
+            metadata: ScrapeMetadata {
+                final_url: Some(final_url),
+                status_code: Some(status_code),
+                proxy: self.proxy.clone(),
+            },
+        })
+    }
+
     /// Inject CDP cookies into the static fetcher's cookie jar.
     pub fn inject_cookies(&self, cookies: &[Cookie], url: &str) -> Result<usize> {
         let url = Url::parse(url).with_context(|| format!("invalid cookie URL: {url}"))?;

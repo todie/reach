@@ -18,6 +18,8 @@ pub mod agent;
 pub mod cdp_fetcher;
 /// Fetcher that starts with static HTTP and escalates to CDP when blocked.
 pub mod hybrid_fetcher;
+/// Free no-captcha search backends (DuckDuckGo HTML for now).
+pub mod search;
 /// Static HTTP fetcher with cookie and proxy support.
 pub mod static_fetcher;
 /// Browser fingerprint spoofing presets and the CDP+JS shim driver.
@@ -31,6 +33,7 @@ pub use agent::{
 };
 pub use cdp_fetcher::CdpFetcher;
 pub use hybrid_fetcher::HybridFetcher;
+pub use search::{SearchResult, ddg_html_search};
 pub use static_fetcher::StaticFetcher;
 pub use stealth::{
     FingerprintProfile, apply_profile, profile_linux_chrome, profile_mac_chrome,
